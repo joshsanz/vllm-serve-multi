@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Env / secrets
+.env
+.env.*
+*.pem
+
+# Docker
+*.log
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp

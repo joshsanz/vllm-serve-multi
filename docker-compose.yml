@@ -1,0 +1,123 @@
+services:
+  gemma4:
+    image: vllm/vllm-openai:v0.24.0-ubuntu2404
+    restart: unless-stopped
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    shm_size: "64gb"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      VLLM_NO_USAGE_STATS: "1"
+      PYTHONUNBUFFERED: "1"
+      VLLM_SERVER_DEV_MODE: "1"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ~/ext/cache/vllm:/root/.cache/vllm
+      - ./healthcheck.py:/healthcheck.py:ro
+    healthcheck:
+      test: ["CMD", "python3", "/healthcheck.py"]
+      interval: 10s
+      timeout: 30s
+      start_period: 20m
+      retries: 6
+    command:
+      - google/gemma-4-31B-it-qat-w4a16-ct
+      - --host
+      - "0.0.0.0"
+      - --gpu-memory-utilization
+      - "0.85"
+      - --served-model-name
+      - gemma4
+      - --max-model-len
+      - "262144"
+      - --override-generation-config
+      - '{"max_new_tokens": 32768}'
+      - --reasoning-parser
+      - gemma4
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - gemma4
+      - --enable-chunked-prefill
+      - --max-num-batched-tokens
+      - "32768"
+      - --max-num-seqs
+      - "10"
+      - --enable-prefix-caching
+      - --async-scheduling
+      - --trust-remote-code
+      - --enable-sleep-mode
+      - --speculative-config
+      - '{"model": "google/gemma-4-31B-it-qat-q4_0-unquantized-assistant", "num_speculative_tokens": 4}'
+
+  ornith:
+    image: vllm/vllm-openai:v0.24.0-ubuntu2404
+    restart: unless-stopped
+    depends_on:
+      gemma4:
+        condition: service_healthy
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    shm_size: "64gb"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      VLLM_NO_USAGE_STATS: "1"
+      PYTHONUNBUFFERED: "1"
+      VLLM_SERVER_DEV_MODE: "1"
+      MODEL: ${MODEL:-deepreinforce-ai/Ornith-1.0-35B-FP8}
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ~/ext/cache/vllm:/root/.cache/vllm
+      - ./healthcheck.py:/healthcheck.py:ro
+    healthcheck:
+      test: ["CMD", "python3", "/healthcheck.py"]
+      interval: 10s
+      timeout: 30s
+      start_period: 20m
+      retries: 6
+    command:
+      - ${MODEL:-deepreinforce-ai/Ornith-1.0-35B-FP8}
+      - --served-model-name
+      - Ornith-1.0
+      - --tensor-parallel-size
+      - "1"
+      - --host
+      - "0.0.0.0"
+      - --max-model-len
+      - "262144"
+      - --override-generation-config
+      - '{"max_new_tokens": 32768}'
+      - --gpu-memory-utilization
+      - "0.85"
+      - --enable-prefix-caching
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - qwen3_xml
+      - --reasoning-parser
+      - qwen3
+      - --trust-remote-code
+      - --enable-sleep-mode
+
+  fastapi-router:
+    build: ./router
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    depends_on:
+      gemma4:
+        condition: service_healthy
+      ornith:
+        condition: service_healthy
