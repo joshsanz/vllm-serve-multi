@@ -1,7 +1,14 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   gemma4:
     image: vllm/vllm-openai:v0.24.0-ubuntu2404
     restart: unless-stopped
+    logging: *default-logging
     ulimits:
       memlock: -1
       stack: 67108864
@@ -59,6 +66,7 @@ services:
   ornith:
     image: vllm/vllm-openai:v0.24.0-ubuntu2404
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       gemma4:
         condition: service_healthy
@@ -114,6 +122,7 @@ services:
   fastapi-router:
     build: ./router
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "8000:8000"
     depends_on:

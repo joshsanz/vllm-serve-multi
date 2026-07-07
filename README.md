@@ -35,6 +35,10 @@ flowchart LR
 `ornith`'s underlying model is overridable via the `MODEL` env var (defaults
 to `deepreinforce-ai/Ornith-1.0-35B-FP8`).
 
+All compose services use the shared `x-logging` anchor (`json-file`, 10MB
+× 3 files) so container logs can't grow unboundedly; `nemotron-3-super.sh`
+applies the same cap via `--log-opt` since it runs outside compose.
+
 ## Running
 
 ```bash

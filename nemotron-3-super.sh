@@ -28,6 +28,8 @@ docker run \
   -d \
   --gpus all \
   --restart unless-stopped \
+  --log-opt max-size=10m \
+  --log-opt max-file=3 \
   -p 8000:8000 \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
   -v "$(pwd)/super_v3_reasoning_parser.py:/app/super_v3_reasoning_parser.py" \
