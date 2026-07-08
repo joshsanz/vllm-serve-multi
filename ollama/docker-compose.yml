@@ -1,0 +1,72 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_NUM_PARALLEL: "4"
+      OLLAMA_MAX_QUEUE: "4"
+      # Ceiling on concurrently-loaded models. At full auto-sized context
+      # (driven by OLLAMA_NUM_PARALLEL x context length) the two models
+      # here don't both fit in VRAM at once -- whichever request comes
+      # second evicts the other's runner and reloads on demand. That's
+      # accepted: full per-request context length matters more than
+      # avoiding the reload-latency hit. This cap just stops a hypothetical
+      # 3rd model from displacing either of these two.
+      OLLAMA_MAX_LOADED_MODELS: "2"
+      OLLAMA_KEEP_ALIVE: "24h"
+    volumes:
+      # Same dir the native `ollama pull` processes are downloading into
+      # (~/.ollama/models) -- reuses those blobs instead of re-fetching
+      # them. Stop the host-level `ollama serve` before bringing this
+      # stack up so two server processes aren't writing the same store.
+      - ~/.ollama:/root/.ollama
+    ports:
+      - "8000:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 10s
+      start_period: 30s
+      retries: 6
+
+  # One-shot: pulls both models (no-op if already fetched) so the blobs are
+  # on disk before any request needs them -- ollama's API errors on an
+  # unpulled model rather than fetching it lazily. Deliberately does NOT
+  # load either model into VRAM: which model gets loaded first, and which
+  # gets evicted under memory pressure (see OLLAMA_MAX_LOADED_MODELS above),
+  # is left entirely to request order. Not revived on daemon restart
+  # (restart: "no"), so after a host reboot this just re-runs as a no-op
+  # pull once ollama is healthy again.
+  puller:
+    image: ollama/ollama:latest
+    restart: "no"
+    logging: *default-logging
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: "http://ollama:11434"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        for m in north-mini-code-1.0:q8_0 laguna-xs-2.1:q8_0; do
+          echo "pulling $$m"
+          ollama pull "$$m"
+        done
