@@ -35,9 +35,10 @@ flowchart LR
 `ornith`'s underlying model is overridable via the `MODEL` env var (defaults
 to `deepreinforce-ai/Ornith-1.0-35B-FP8`).
 
-All compose services use the shared `x-logging` anchor (`json-file`, 10MB
-× 3 files) so container logs can't grow unboundedly; `nemotron-3-super.sh`
-applies the same cap via `--log-opt` since it runs outside compose.
+All compose services (here and in `qwen36/`) use the shared `x-logging`
+anchor (`json-file`, 10MB × 3 files) so container logs can't grow
+unboundedly; `nemotron-3-super.sh` applies the same cap via `--log-opt`
+since it runs outside compose.
 
 ## Running
 
@@ -59,6 +60,24 @@ Exposed API (port 8000, OpenAI-compatible):
 `model` in the request body must be one of the keys in
 `router/app/config.py::MODELS` (currently `gemma4`, `Ornith-1.0`).
 
+## qwen36/docker-compose.yml
+
+Standalone compose stack for Qwen 3.6-35B-A3B, deliberately kept **out** of
+the top-level `docker-compose.yml` and in its own directory so it gets an
+isolated compose project (`qwen36`) and network instead of joining the main
+`vllm` project. Two mutually-exclusive profiles select between weight
+formats (same container name/port, so only one runs at a time):
+
+```bash
+cd qwen36
+docker compose --profile fp8 up -d      # Qwen/Qwen3.6-35B-A3B-FP8
+docker compose --profile nvfp4 up -d    # nvidia/Qwen3.6-35B-A3B-NVFP4
+```
+
+To iterate on settings, edit the `command:` list for the active profile and
+re-run the same `up -d` — compose recreates the container in place instead of
+requiring a manual `docker rm -f` first.
+
 ## nemotron-3-super.sh
 
 Standalone launcher for `nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4`,
@@ -79,6 +98,7 @@ final content isn't dropped into `reasoning_content` when it shouldn't be.
 ```
 docker-compose.yml            gemma4 + ornith + fastapi-router stack
 healthcheck.py                 shared vLLM sleep-mode healthcheck
+qwen36/docker-compose.yml       standalone Qwen 3.6-35B-A3B stack (fp8/nvfp4 profiles)
 nemotron-3-super.sh             standalone Nemotron 3 Super launcher
 super_v3_reasoning_parser.py    reasoning parser plugin for Nemotron 3
 router/                        FastAPI OpenAI-compatible swap-aware proxy
