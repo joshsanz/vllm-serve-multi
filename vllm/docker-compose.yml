@@ -6,7 +6,7 @@ x-logging: &default-logging
 
 services:
   gemma4:
-    image: vllm/vllm-openai:v0.24.0-ubuntu2404
+    image: vllm/vllm-openai:v0.25.0-ubuntu2404
     restart: unless-stopped
     logging: *default-logging
     ulimits:
@@ -64,7 +64,7 @@ services:
       - '{"model": "google/gemma-4-31B-it-qat-q4_0-unquantized-assistant", "num_speculative_tokens": 4}'
 
   ornith:
-    image: vllm/vllm-openai:v0.24.0-ubuntu2404
+    image: vllm/vllm-openai:v0.25.0-ubuntu2404
     restart: unless-stopped
     logging: *default-logging
     depends_on:

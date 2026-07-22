@@ -1,4 +1,4 @@
-# Standalone compose stack for Qwen 3.6-35B-A3B — NOT part of ../docker-compose.yml.
+# Standalone compose stack for Qwen 3.6-27B — NOT part of ../docker-compose.yml.
 # Lives in its own directory so compose derives a project name of "qwen36",
 # isolated from the main "vllm" stack's project/network namespace.
 #
@@ -30,8 +30,8 @@ x-gpu: &default-gpu
 
 services:
   qwen36-fp8:
-    image: vllm/vllm-openai:v0.24.0-ubuntu2404
-    container_name: qwen36-35b-a3b
+    image: vllm/vllm-openai:v0.25.0-ubuntu2404
+    container_name: qwen36-27b
     profiles: ["fp8"]
     restart: unless-stopped
     logging: *default-logging
@@ -44,23 +44,22 @@ services:
       HF_TOKEN: ${HF_TOKEN}
       VLLM_MARLIN_USE_ATOMIC_ADD: "1"
       VLLM_USE_DEEP_GEMM: "0"
-      VLLM_MOE_USE_DEEP_GEMM: "0"
     command:
       - --host
       - "0.0.0.0"
       - --port
       - "8000"
       - --model
-      - Qwen/Qwen3.6-35B-A3B-FP8
+      - Qwen/Qwen3.6-27B-FP8
       - --max-model-len
       - "262144"
       - --served-model-name
-      - Qwen3.6-35B-A3B
+      - Qwen3.6-27B
       - --max-num-batched-tokens
       - "32768"
       - --trust-remote-code
       - --gpu-memory-utilization
-      - "0.8"
+      - "0.65"
       - --enable-auto-tool-choice
       - --tool-call-parser
       - qwen3_xml
@@ -72,10 +71,8 @@ services:
       - fastsafetensors
       - --attention-backend
       - flashinfer
-      - --moe-backend
-      - triton
       - --speculative-config
-      - '{"method":"mtp","num_speculative_tokens":2}'
+      - '{"method":"mtp","num_speculative_tokens":3}'
       - --enable-prefix-caching
       - -tp
       - "1"
@@ -83,8 +80,8 @@ services:
       - "1"
 
   qwen36-nvfp4:
-    image: vllm/vllm-openai:v0.24.0-ubuntu2404
-    container_name: qwen36-35b-a3b
+    image: vllm/vllm-openai:v0.25.0-ubuntu2404
+    container_name: qwen36-27b
     profiles: ["nvfp4"]
     restart: unless-stopped
     logging: *default-logging
@@ -101,19 +98,17 @@ services:
       - --port
       - "8000"
       - --model
-      - nvidia/Qwen3.6-35B-A3B-NVFP4
+      - nvidia/Qwen3.6-27B-NVFP4
       - --max-model-len
       - "262144"
       - --served-model-name
-      - Qwen3.6-35B-A3B
+      - Qwen3.6-27B
       - --gpu-memory-utilization
-      - "0.8"
+      - "0.65"
       - --kv-cache-dtype
       - fp8
       - --attention-backend
       - flashinfer
-      - --moe-backend
-      - marlin
       - --tensor-parallel-size
       - "1"
       - --max-num-seqs
@@ -131,4 +126,4 @@ services:
       - --tool-call-parser
       - qwen3_xml
       - --speculative-config
-      - '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+      - '{"method":"mtp","num_speculative_tokens":4}'
