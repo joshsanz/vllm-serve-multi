@@ -30,7 +30,7 @@ x-gpu: &default-gpu
 
 services:
   qwen36-fp8:
-    image: vllm/vllm-openai:v0.25.0-ubuntu2404
+    image: vllm/vllm-openai:v0.25.1-ubuntu2404
     container_name: qwen36-35b-a3b
     profiles: ["fp8"]
     restart: unless-stopped
@@ -83,7 +83,7 @@ services:
       - "1"
 
   qwen36-nvfp4:
-    image: vllm/vllm-openai:v0.25.0-ubuntu2404
+    image: vllm/vllm-openai:v0.25.1-ubuntu2404
     container_name: qwen36-35b-a3b
     profiles: ["nvfp4"]
     restart: unless-stopped

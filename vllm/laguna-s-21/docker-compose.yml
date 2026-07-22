@@ -1,0 +1,74 @@
+# Standalone compose stack for poolside Laguna-S-2.1-NVFP4 — NOT part of
+# ../docker-compose.yml. Lives in its own directory so compose derives a
+# project name of "laguna-s-21", isolated from the main "vllm" stack's
+# project/network namespace.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-gpu: &default-gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+  laguna-s-21:
+    image: vllm/vllm-openai:v0.25.1-ubuntu2404
+    container_name: laguna-s-21
+    restart: unless-stopped
+    logging: *default-logging
+    <<: *default-gpu
+    dns:
+      - 192.168.0.1
+      - 205.171.2.65
+    ports:
+      - "8000:8000"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      HF_TOKEN: ${HF_TOKEN}
+      CUTE_DSL_ARCH: sm_121a
+      MAX_JOBS: "4"
+    command:
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --model
+      - poolside/Laguna-S-2.1-NVFP4
+      - --served-model-name
+      - Laguna-S-2.1
+      - --max-model-len
+      - "262144"
+      - --max-num-batched-tokens
+      - "16384"
+      - --max-num-seqs
+      - "32"
+      - --gpu-memory-utilization
+      - "0.75"
+      - --trust-remote-code
+      - --load-format
+      - fastsafetensors
+      - --attention-backend
+      - flashinfer
+      - --kv-cache-dtype
+      - fp8_e4m3
+      - --enable-prefix-caching
+      - --async-scheduling
+      - --enable-chunked-prefill
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - poolside_v1
+      - --reasoning-parser
+      - poolside_v1
+      - --override-generation-config
+      - '{"temperature":0.7,"top_p":0.95}'
+      - --speculative-config
+      - '{"method":"dflash","num_speculative_tokens":7,"model":"poolside/Laguna-S-2.1-DFlash-NVFP4"}'
