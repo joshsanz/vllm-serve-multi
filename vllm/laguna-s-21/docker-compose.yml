@@ -71,5 +71,7 @@ services:
       - poolside_v1
       - --override-generation-config
       - '{"temperature":0.7,"top_p":0.95}'
+      - --default-chat-template-kwargs
+      - '{"enable_thinking": true}'
       - --speculative-config
       - '{"method":"dflash","num_speculative_tokens":7,"model":"poolside/Laguna-S-2.1-DFlash-NVFP4"}'
