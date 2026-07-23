@@ -1,0 +1,51 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-gpu: &default-gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+  laguna:
+    image: lmsysorg/sglang:latest-runtime
+    container_name: laguna
+    restart: "no"  # parked: see README.md — sglang lacks upstream fixes vLLM already has
+    logging: *default-logging
+    <<: *default-gpu
+    shm_size: "32gb"
+    ipc: host
+    ports:
+      - "8000:30000"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      HF_TOKEN: ${HF_TOKEN}
+      SGLANG_FLASHINFER_WORKSPACE_SIZE: "1073741824"
+    entrypoint: ["/opt/nvidia/nvidia_entrypoint.sh", "bash", "-c"]
+    command:
+      - >
+        pip install --no-cache-dir distro runai-model-streamer &&
+        sglang serve
+        --model-path poolside/Laguna-S-2.1-NVFP4
+        --tp 1
+        --trust-remote-code
+        --reasoning-parser poolside_v1
+        --tool-call-parser poolside_v1
+        --attention-backend flashinfer
+        --load-format runai_streamer
+        --model-loader-extra-config '{"concurrency": 4, "memory_limit": 4294967296}'
+        --max-running-requests 48
+        --page-size 1
+        --mem-fraction-static 0.77
+        --cuda-graph-max-bs-decode 64
+        --cuda-graph-max-bs-prefill 2048
+        --host 0.0.0.0
+        --port 30000
