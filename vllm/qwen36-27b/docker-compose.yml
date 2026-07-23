@@ -40,6 +40,7 @@ services:
       - "8000:8000"
     volumes:
       - ~/.cache/huggingface:/root/.cache/huggingface
+      - ~/ext/cache/vllm:/root/.cache/vllm
     environment:
       HF_TOKEN: ${HF_TOKEN}
       VLLM_MARLIN_USE_ATOMIC_ADD: "1"
@@ -90,6 +91,7 @@ services:
       - "8000:8000"
     volumes:
       - ~/.cache/huggingface:/root/.cache/huggingface
+      - ~/ext/cache/vllm:/root/.cache/vllm
     environment:
       HF_TOKEN: ${HF_TOKEN}
     command:
