@@ -1,0 +1,89 @@
+# Standalone compose stack for cyankiwi/KAT-Coder-V2.5-Dev-AWQ-INT4 — NOT
+# part of ../docker-compose.yml. Lives in its own directory so compose
+# derives a project name of "kat-coder-v25-dev-awq", isolated from the main
+# "vllm" stack's project/network namespace.
+#
+# This is an INT4 quant (compressed-tensors "pack-quantized", group_size 32,
+# asymmetric — cyankiwi calls it "AWQ" but vLLM will auto-detect the actual
+# compressed-tensors quant_method from config.json, so no --quantization
+# flag is needed) of Kwaipilot/KAT-Coder-V2.5-Dev, a KwaiKAT fine-tune of
+# Qwen3.6-35B-A3B (35B total / 3B active params, MoE).
+#
+# The checkpoint ships language-model weights only, but its config.json
+# still carries a vision_config inherited from the base Qwen3.5-MoE-VL
+# architecture, so --language-model-only is required — without it vLLM
+# tries to init vision-tower weights that aren't present and startup fails.
+# No MTP/speculative weights are included (mtp_num_hidden_layers: 0 in
+# config.json), so there's no --speculative-config here.
+#
+# Architecture is model_type "qwen3_5_moe" (hybrid linear-attention /
+# full-attention MoE) — new as of this model's release. If the pinned
+# vllm/vllm-openai image tag predates support for it, startup will fail;
+# bump the image tag if so.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-gpu: &default-gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+  kat-coder-v25-dev-awq:
+    image: vllm/vllm-openai:v0.26.0-ubuntu2404
+    container_name: kat-coder-v25-dev-awq
+    restart: unless-stopped
+    logging: *default-logging
+    <<: *default-gpu
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    shm_size: "64gb"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ~/ext/cache/vllm:/root/.cache/vllm
+    environment:
+      HF_TOKEN: ${HF_TOKEN}
+      VLLM_NO_USAGE_STATS: "1"
+      PYTHONUNBUFFERED: "1"
+    command:
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --model
+      - cyankiwi/KAT-Coder-V2.5-Dev-AWQ-INT4
+      - --served-model-name
+      - KAT-Coder-V2.5
+      - --language-model-only
+      - --max-model-len
+      - "262144"
+      - --tensor-parallel-size
+      - "1"
+      - --gpu-memory-utilization
+      - "0.8"
+      - --max-num-batched-tokens
+      - "16384"
+      - --trust-remote-code
+      - --enable-prefix-caching
+      - --async-scheduling
+      - --enable-chunked-prefill
+      - --load-format
+      - fastsafetensors
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - qwen3_coder
+      - --reasoning-parser
+      - qwen3
+      - --default-chat-template-kwargs
+      - '{"enable_thinking": true, "preserve_thinking": true}'

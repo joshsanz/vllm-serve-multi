@@ -1,0 +1,74 @@
+# Standalone compose stack for google/gemma-4-31B-it-qat-w4a16-ct — NOT part
+# of ../docker-compose.yml (removed; the combined gemma4+ornith+fastapi-router
+# stack used vLLM sleep-mode to swap the two models on/off the one GPU, which
+# this box has moved away from). Lives in its own directory so compose
+# derives a project name of "gemma4", isolated from other stacks'
+# project/network namespace.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-gpu: &default-gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+  gemma4:
+    image: vllm/vllm-openai:v0.26.0-ubuntu2404
+    container_name: gemma4
+    restart: unless-stopped
+    logging: *default-logging
+    <<: *default-gpu
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    shm_size: "64gb"
+    ports:
+      - "8000:8000"
+    environment:
+      VLLM_NO_USAGE_STATS: "1"
+      PYTHONUNBUFFERED: "1"
+      VLLM_SERVER_DEV_MODE: "1"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ~/ext/cache/vllm:/root/.cache/vllm
+      - ~/ext/cache/triton:/root/.triton
+    command:
+      - google/gemma-4-31B-it-qat-w4a16-ct
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --gpu-memory-utilization
+      - "0.75"
+      - --served-model-name
+      - gemma4
+      - --max-model-len
+      - "262144"
+      - --override-generation-config
+      - '{"max_new_tokens": 32768}'
+      - --reasoning-parser
+      - gemma4
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - gemma4
+      - --enable-chunked-prefill
+      - --max-num-batched-tokens
+      - "32768"
+      - --max-num-seqs
+      - "10"
+      - --enable-prefix-caching
+      - --async-scheduling
+      - --trust-remote-code
+      - --default-chat-template-kwargs
+      - '{"enable_thinking": true, "preserve_thinking": true}'
+      - --speculative-config
+      - '{"model": "google/gemma-4-31B-it-qat-q4_0-unquantized-assistant", "num_speculative_tokens": 4}'

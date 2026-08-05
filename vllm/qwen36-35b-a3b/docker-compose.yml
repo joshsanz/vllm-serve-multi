@@ -30,7 +30,7 @@ x-gpu: &default-gpu
 
 services:
   qwen36-fp8:
-    image: vllm/vllm-openai:v0.25.1-ubuntu2404
+    image: vllm/vllm-openai:v0.26.0-ubuntu2404
     container_name: qwen36-35b-a3b
     profiles: ["fp8"]
     restart: unless-stopped
@@ -82,9 +82,11 @@ services:
       - "1"
       - -pp
       - "1"
+      - --default-chat-template-kwargs
+      - '{"enable_thinking": true, "preserve_thinking": true}'
 
   qwen36-nvfp4:
-    image: vllm/vllm-openai:v0.25.1-ubuntu2404
+    image: vllm/vllm-openai:v0.26.0-ubuntu2404
     container_name: qwen36-35b-a3b
     profiles: ["nvfp4"]
     restart: unless-stopped
@@ -134,3 +136,5 @@ services:
       - qwen3_xml
       - --speculative-config
       - '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+      - --default-chat-template-kwargs
+      - '{"enable_thinking": true, "preserve_thinking": true}'

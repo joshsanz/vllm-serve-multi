@@ -1,0 +1,72 @@
+# Standalone compose stack for deepreinforce-ai/Ornith-1.0-35B-FP8 — NOT
+# part of ../docker-compose.yml (removed; the combined gemma4+ornith+
+# fastapi-router stack used vLLM sleep-mode to swap the two models on/off the
+# one GPU, which this box has moved away from). Lives in its own directory
+# so compose derives a project name of "ornith", isolated from other
+# stacks' project/network namespace.
+#
+# Underlying model is overridable via the MODEL env var (defaults to
+# deepreinforce-ai/Ornith-1.0-35B-FP8).
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-gpu: &default-gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+  ornith:
+    image: vllm/vllm-openai:v0.26.0-ubuntu2404
+    container_name: ornith
+    restart: unless-stopped
+    logging: *default-logging
+    <<: *default-gpu
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    shm_size: "64gb"
+    ports:
+      - "8000:8000"
+    environment:
+      VLLM_NO_USAGE_STATS: "1"
+      PYTHONUNBUFFERED: "1"
+      VLLM_SERVER_DEV_MODE: "1"
+      MODEL: ${MODEL:-deepreinforce-ai/Ornith-1.0-35B-FP8}
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ~/ext/cache/vllm:/root/.cache/vllm
+      - ~/ext/cache/triton:/root/.triton
+    command:
+      - ${MODEL:-deepreinforce-ai/Ornith-1.0-35B-FP8}
+      - --served-model-name
+      - Ornith-1.0
+      - --tensor-parallel-size
+      - "1"
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --max-model-len
+      - "262144"
+      - --override-generation-config
+      - '{"max_new_tokens": 32768}'
+      - --gpu-memory-utilization
+      - "0.78"
+      - --enable-prefix-caching
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - qwen3_xml
+      - --reasoning-parser
+      - qwen3
+      - --trust-remote-code
+      - --default-chat-template-kwargs
+      - '{"enable_thinking": true, "preserve_thinking": true}'

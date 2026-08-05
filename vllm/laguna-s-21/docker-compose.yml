@@ -20,7 +20,7 @@ x-gpu: &default-gpu
 
 services:
   laguna-s-21:
-    image: vllm/vllm-openai:v0.25.1-ubuntu2404
+    image: vllm/vllm-openai:v0.26.0-ubuntu2404
     container_name: laguna-s-21
     restart: unless-stopped
     logging: *default-logging
@@ -72,6 +72,6 @@ services:
       - --override-generation-config
       - '{"temperature":0.7,"top_p":0.95}'
       - --default-chat-template-kwargs
-      - '{"enable_thinking": true}'
+      - '{"enable_thinking": true, "preserve_thinking": true}'
       - --speculative-config
       - '{"method":"dflash","num_speculative_tokens":7,"model":"poolside/Laguna-S-2.1-DFlash-NVFP4"}'
