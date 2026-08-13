@@ -49,6 +49,7 @@ GPU memory to spare for two at once.
 | `qwen36-27b/` | `Qwen/Qwen3.6-27B-{FP8,NVFP4}` | `fp8`/`nvfp4` compose profiles |
 | `qwen36-35b-a3b/` | `Qwen/Qwen3.6-35B-A3B-{FP8,NVFP4}` | `fp8`/`nvfp4` compose profiles |
 | `kat-coder-v25-dev-awq/` | `cyankiwi/KAT-Coder-V2.5-Dev-AWQ-INT4` | fine-tune of Qwen3.6-35B-A3B, INT4 compressed-tensors quant, no speculative decoding |
+| `nemotron-35-lightning-dspark/` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` | hybrid Mamba-2+MoE+Attention, DSpark speculative decoding, NVIDIA's DGX Spark recipe |
 
 Directories with `fp8`/`nvfp4` profiles select between weight formats (same
 container name/port, so only one runs at a time):
@@ -89,6 +90,7 @@ laguna-s-21/docker-compose.yml         standalone Laguna-S-2.1 stack
 qwen36-27b/docker-compose.yml          standalone Qwen3.6-27B stack (fp8/nvfp4 profiles)
 qwen36-35b-a3b/docker-compose.yml      standalone Qwen3.6-35B-A3B stack (fp8/nvfp4 profiles)
 kat-coder-v25-dev-awq/docker-compose.yml  standalone KAT-Coder-V2.5-Dev-AWQ-INT4 stack
+nemotron-35-lightning-dspark/docker-compose.yml  standalone Nemotron-3.5-Lightning stack (DSpark speculative decoding)
 MTP_BENCHMARKS.md                      throughput benchmark results across stacks
 nemotron-3-super.sh                    standalone Nemotron 3 Super launcher
 super_v3_reasoning_parser.py           reasoning parser plugin for Nemotron 3

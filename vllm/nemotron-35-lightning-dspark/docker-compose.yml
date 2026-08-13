@@ -1,0 +1,84 @@
+# Standalone compose stack for nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4
+# — NOT part of ../docker-compose.yml. Lives in its own directory so compose
+# derives a project name of "nemotron-35-lightning-dspark", isolated from
+# other stacks' project/network namespace.
+#
+# Hybrid Mamba-2 + MoE + Attention architecture (30B total / 3B active
+# params). Uses DSpark speculative decoding — a semi-autoregressive drafter
+# that proposes a whole block of candidate tokens per forward pass — which
+# NVIDIA's model card recommends as the default for DGX Spark (GB10) and
+# other low-concurrency deployments. Two other draft strategies ship for
+# this model (not used here): DFlash (block-diffusion drafter, repo suffix
+# `-DFlash`) and MTP (built into the base checkpoint, no separate repo).
+#
+# Config below follows NVIDIA's published "1x DGX Spark (GB10)" vLLM recipe
+# (https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4)
+# as closely as possible — including its 0.91 gpu-memory-utilization and
+# default 1M-token context, both validated by NVIDIA for this model on this
+# exact hardware (the hybrid architecture's KV cache is far smaller than a
+# dense-attention model's, since only a handful of layers use full
+# attention) — translated from the recipe's dotted
+# `--speculative_config.*` CLI form into the JSON `--speculative-config`
+# form used elsewhere in this repo. `vllm serve` autodetects the DSpark
+# method from the draft checkpoint's `Qwen3DSparkModel` architecture, so no
+# explicit "method" key is needed.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-gpu: &default-gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+  nemotron-35-lightning-dspark:
+    image: vllm/vllm-openai:v0.27.1-ubuntu2404
+    container_name: nemotron-35-lightning-dspark
+    restart: unless-stopped
+    logging: *default-logging
+    <<: *default-gpu
+    ports:
+      - "8000:8000"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ~/ext/cache/vllm:/root/.cache/vllm
+    environment:
+      HF_TOKEN: ${HF_TOKEN}
+    command:
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --model
+      - nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4
+      - --served-model-name
+      - Nemotron-3.5-Lightning
+      - --trust-remote-code
+      - --moe-backend
+      - marlin
+      - --kv-cache-dtype
+      - fp8
+      - --enable-prefix-caching
+      - --gpu-memory-utilization
+      - "0.80"
+      - --mamba-backend
+      - flashinfer
+      - --mamba-cache-mode
+      - align
+      - --reasoning-parser
+      - nemotron_v3
+      - --tool-call-parser
+      - qwen3_coder
+      - --enable-auto-tool-choice
+      - --speculative-config
+      - '{"model":"nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark","num_speculative_tokens":3}'
+      - --default-chat-template-kwargs
+      - '{"enable_thinking": true, "preserve_thinking": true}'

@@ -22,7 +22,7 @@ x-gpu: &default-gpu
 
 services:
   gemma4:
-    image: vllm/vllm-openai:v0.26.0-ubuntu2404
+    image: vllm/vllm-openai:v0.27.1-ubuntu2404
     container_name: gemma4
     restart: unless-stopped
     logging: *default-logging

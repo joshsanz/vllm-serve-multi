@@ -38,7 +38,7 @@ x-gpu: &default-gpu
 
 services:
   kat-coder-v25-dev-awq:
-    image: vllm/vllm-openai:v0.26.0-ubuntu2404
+    image: vllm/vllm-openai:v0.27.1-ubuntu2404
     container_name: kat-coder-v25-dev-awq
     restart: unless-stopped
     logging: *default-logging
