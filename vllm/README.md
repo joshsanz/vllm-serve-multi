@@ -46,25 +46,18 @@ GPU memory to spare for two at once.
 | `gemma4/` | `google/gemma-4-31B-it-qat-w4a16-ct` | |
 | `ornith/` | `deepreinforce-ai/Ornith-1.0-35B-FP8` | model overridable via `MODEL` env var |
 | `laguna-s-21/` | `poolside/Laguna-S-2.1-NVFP4` | dflash speculative decoding |
-| `qwen36-27b/` | `Qwen/Qwen3.6-27B-{FP8,NVFP4}` | `fp8`/`nvfp4` compose profiles |
-| `qwen36-35b-a3b/` | `Qwen/Qwen3.6-35B-A3B-{FP8,NVFP4}` | `fp8`/`nvfp4` compose profiles |
+| `qwen36-27b/` | `Qwen/Qwen3.6-27B-FP8` | |
+| `qwen36-35b-a3b/` | `Qwen/Qwen3.6-35B-A3B-FP8` | |
 | `kat-coder-v25-dev-awq/` | `cyankiwi/KAT-Coder-V2.5-Dev-AWQ-INT4` | fine-tune of Qwen3.6-35B-A3B, INT4 compressed-tensors quant, no speculative decoding |
 | `nemotron-35-lightning-dspark/` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` | hybrid Mamba-2+MoE+Attention, DSpark speculative decoding, NVIDIA's DGX Spark recipe |
 
-Directories with `fp8`/`nvfp4` profiles select between weight formats (same
-container name/port, so only one runs at a time):
+To iterate on settings, edit the `command:` list and re-run `up -d` —
+compose recreates the container in place instead of requiring a manual
+`docker rm -f` first.
 
-```bash
-cd qwen36-35b-a3b
-docker compose --profile fp8 up -d      # Qwen/Qwen3.6-35B-A3B-FP8
-docker compose --profile nvfp4 up -d    # nvidia/Qwen3.6-35B-A3B-NVFP4
-```
-
-To iterate on settings, edit the `command:` list for the active service/
-profile and re-run the same `up -d` — compose recreates the container in
-place instead of requiring a manual `docker rm -f` first.
-
-See `MTP_BENCHMARKS.md` for throughput benchmarks across these stacks.
+See `MTP_BENCHMARKS.md` for throughput benchmarks across these stacks
+(note: the qwen36 stacks have since been pinned to fp8-only, dropping the
+nvfp4 profile the benchmarks favored).
 
 ## nemotron-3-super.sh
 
@@ -87,8 +80,8 @@ final content isn't dropped into `reasoning_content` when it shouldn't be.
 gemma4/docker-compose.yml              standalone gemma4 stack
 ornith/docker-compose.yml              standalone Ornith-1.0 stack
 laguna-s-21/docker-compose.yml         standalone Laguna-S-2.1 stack
-qwen36-27b/docker-compose.yml          standalone Qwen3.6-27B stack (fp8/nvfp4 profiles)
-qwen36-35b-a3b/docker-compose.yml      standalone Qwen3.6-35B-A3B stack (fp8/nvfp4 profiles)
+qwen36-27b/docker-compose.yml          standalone Qwen3.6-27B stack (fp8)
+qwen36-35b-a3b/docker-compose.yml      standalone Qwen3.6-35B-A3B stack (fp8)
 kat-coder-v25-dev-awq/docker-compose.yml  standalone KAT-Coder-V2.5-Dev-AWQ-INT4 stack
 nemotron-35-lightning-dspark/docker-compose.yml  standalone Nemotron-3.5-Lightning stack (DSpark speculative decoding)
 MTP_BENCHMARKS.md                      throughput benchmark results across stacks
