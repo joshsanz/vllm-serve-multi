@@ -1,0 +1,88 @@
+# Standalone compose stack for Qwen 3.8-27B — NOT part of ../docker-compose.yml.
+# Lives in its own directory so compose derives a project name of "qwen38",
+# isolated from the main "vllm" stack's project/network namespace.
+#
+# Qwen3.8-27B is a dense hybrid-attention model (16 full-attention layers,
+# 48 linear Gated-DeltaNet layers) — architecturally different from
+# Qwen3.6-27B's plain dense transformer, but vLLM auto-detects and manages
+# the hybrid KV cache with no extra flags (confirmed via vLLM's own
+# Qwen3-Next recipe, which serves that hybrid family with a bare `-tp N`
+# and nothing hybrid-specific). Settings below otherwise mirror
+# ../qwen36-27b/ (same size class, same FP8 quant, validated on this box),
+# adapted from Qwen's official recipe
+# (https://huggingface.co/Qwen/Qwen3.8-27B-FP8, 4x-Blackwell FP8 profile)
+# down to this box's single GPU:
+#   --tensor-parallel-size 4 -> 1     only one GPU here
+#   --tool-call-parser qwen3_coder    per Qwen's recipe (3.6 used qwen3_xml)
+#
+# To tweak settings, edit the command list below and re-run `up -d` —
+# compose recreates the container in place instead of needing a manual
+# `docker rm -f` first.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-gpu: &default-gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+  qwen38-fp8:
+    image: vllm/vllm-openai:v0.27.1-ubuntu2404
+    container_name: qwen38-27b
+    restart: unless-stopped
+    logging: *default-logging
+    <<: *default-gpu
+    ports:
+      - "8000:8000"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ~/ext/cache/vllm:/root/.cache/vllm
+    environment:
+      HF_TOKEN: ${HF_TOKEN}
+      VLLM_MARLIN_USE_ATOMIC_ADD: "1"
+      VLLM_USE_DEEP_GEMM: "0"
+    command:
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --model
+      - Qwen/Qwen3.8-27B-FP8
+      - --max-model-len
+      - "262144"
+      - --served-model-name
+      - Qwen3.8-27B
+      - --max-num-batched-tokens
+      - "32768"
+      - --trust-remote-code
+      - --gpu-memory-utilization
+      - "0.65"
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - qwen3_coder
+      - --reasoning-parser
+      - qwen3
+      - --kv-cache-dtype
+      - fp8
+      - --load-format
+      - fastsafetensors
+      - --attention-backend
+      - flashinfer
+      - --speculative-config
+      - '{"method":"mtp","num_speculative_tokens":3}'
+      - --enable-prefix-caching
+      - -tp
+      - "1"
+      - -pp
+      - "1"
+      - --default-chat-template-kwargs
+      - '{"enable_thinking": true, "preserve_thinking": true}'

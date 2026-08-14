@@ -47,6 +47,7 @@ GPU memory to spare for two at once.
 | `ornith/` | `deepreinforce-ai/Ornith-1.0-35B-FP8` | model overridable via `MODEL` env var |
 | `laguna-s-21/` | `poolside/Laguna-S-2.1-NVFP4` | dflash speculative decoding |
 | `qwen36-27b/` | `Qwen/Qwen3.6-27B-FP8` | |
+| `qwen38-27b/` | `Qwen/Qwen3.8-27B-FP8` | dense hybrid attention (Gated DeltaNet + full attention); vLLM auto-manages the hybrid KV cache, no extra flags needed |
 | `qwen36-35b-a3b/` | `Qwen/Qwen3.6-35B-A3B-FP8` | |
 | `kat-coder-v25-dev-awq/` | `cyankiwi/KAT-Coder-V2.5-Dev-AWQ-INT4` | fine-tune of Qwen3.6-35B-A3B, INT4 compressed-tensors quant, no speculative decoding |
 | `nemotron-35-lightning-dspark/` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` | hybrid Mamba-2+MoE+Attention, DSpark speculative decoding, NVIDIA's DGX Spark recipe |
@@ -81,6 +82,7 @@ gemma4/docker-compose.yml              standalone gemma4 stack
 ornith/docker-compose.yml              standalone Ornith-1.0 stack
 laguna-s-21/docker-compose.yml         standalone Laguna-S-2.1 stack
 qwen36-27b/docker-compose.yml          standalone Qwen3.6-27B stack (fp8)
+qwen38-27b/docker-compose.yml          standalone Qwen3.8-27B stack (fp8, hybrid attention)
 qwen36-35b-a3b/docker-compose.yml      standalone Qwen3.6-35B-A3B stack (fp8)
 kat-coder-v25-dev-awq/docker-compose.yml  standalone KAT-Coder-V2.5-Dev-AWQ-INT4 stack
 nemotron-35-lightning-dspark/docker-compose.yml  standalone Nemotron-3.5-Lightning stack (DSpark speculative decoding)
