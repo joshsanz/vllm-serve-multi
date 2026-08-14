@@ -1,7 +1,7 @@
 #!/bin/bash
 
 unsloth run \
-  --model unsloth/DeepSeek-V4-Flash-0731-GGUF:UD-Q2_K_XL \
+  --model unsloth/DeepSeek-V4-Flash-0731-GGUF:UD-IQ2_M \
   --temp 1.0 --top-p 0.95 --min-p 0.01 \
   -ngl 999 --no-mmap \
   --threads 20 \
