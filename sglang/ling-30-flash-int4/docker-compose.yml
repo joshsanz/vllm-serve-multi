@@ -1,0 +1,94 @@
+# Standalone compose stack for inclusionAI/Ling-3.0-flash-int4 on sglang —
+# lives in its own directory so compose derives a project name of
+# "ling-30-flash-int4", isolated from other stacks' project/network
+# namespace (see ../../vllm/README.md for why: this box is a single-GPU
+# DGX Spark / GB10 that can only hold one large model resident at a time,
+# so every model gets its own standalone stack and only one is meant to be
+# up at once).
+#
+# Adapted from inclusionAI's official 2x-Blackwell-GPU sglang recipe
+# (https://huggingface.co/inclusionAI/Ling-3.0-flash-int4) down to this
+# box's single GB10:
+#   --tp-size 2 -> 1                  only one GPU here
+#   --dist-init-addr / --nnodes 1     dropped — both only matter for
+#                                      multi-rank coordination at tp-size > 1
+#   --mem-fraction-static 0.8 -> 0.85 more headroom for the single GPU's
+#                                      weight+KV budget
+#   --max-running-requests 64 -> 32   lower concurrency cap to match the
+#                                      smaller memory budget above
+#   --max-mamba-cache-size 320 -> 48  the 2xGPU recipe's mamba/SSM state
+#                                      cache alone exceeded this box's whole
+#                                      memory budget (weights + NEXTN draft
+#                                      weights already use ~72GB of the
+#                                      ~121GB unified memory); 48 slots caps
+#                                      sglang's auto-derived
+#                                      max_running_requests at 9, which is
+#                                      fine for single-agent-harness use.
+# Everything else (context length, NEXTN speculative decoding, etc.) is kept
+# as recommended.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-gpu: &default-gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+  ling-30-flash-int4:
+    image: lmsysorg/sglang:dev-Ling-3.0-flash
+    container_name: ling-30-flash-int4
+    restart: unless-stopped
+    logging: *default-logging
+    <<: *default-gpu
+    shm_size: "32gb"
+    ipc: host
+    ports:
+      - "8000:30000"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      HF_TOKEN: ${HF_TOKEN}
+      SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN: "1"
+      SGLANG_JIT_DEEPGEMM_PRECOMPILE: "1"
+      SGLANG_ENABLE_SPEC_V2: "1"
+      FLASHINFER_DISABLE_VERSION_CHECK: "1"
+    command:
+      - sglang
+      - serve
+      - --model-path
+      - inclusionAI/Ling-3.0-flash-int4
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "30000"
+      - --trust-remote-code
+      - --mem-fraction-static
+      - "0.85"
+      - --max-running-requests
+      - "32"
+      - --tp-size
+      - "1"
+      - --chunked-prefill-size
+      - "8192"
+      - --allow-auto-truncate
+      - --tool-call-parser
+      - ling3
+      - --reasoning-parser
+      - ling3
+      - --context-length
+      - "262144"
+      - --speculative-algorithm
+      - NEXTN
+      - --max-mamba-cache-size
+      - "48"
+      - --enable-fp32-lm-head
+      - --disable-shared-experts-fusion
