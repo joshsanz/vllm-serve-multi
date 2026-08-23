@@ -125,7 +125,7 @@ assigned on that particular run, not a fixed convention.
 | ling-30-flash-int4 (sglang) | Ling-3.0-flash-int4 | NEXTN | 15.08 | 12.96–17.50 | n/a* | First TTFT (51s, cold file) far higher than the rest — likely first-request JIT/kernel warmup, not representative of steady state. |
 | muse-glimmer-30b (unsloth/llama.cpp) | Muse-Glimmer-30B-GGUF Q8_K_XL | dflash (v1) | 14.35 | 13.27–15.43 | 43.8–57.1% | Own bundled `dflash-kquant.gguf` draft, not the broken DFlash2 checkpoint (see `[[dflash2-dspark-unsupported]]`). |
 | deepseek-v4-flash-0731 (unsloth/llama.cpp) | DeepSeek-V4-Flash-0731-GGUF UD-IQ2_M | dspark | 28.94 | 26.78–30.70 | 48.4–62.4% | Largest checkpoint run (~95GB); loaded and benchmarked cleanly despite the tight memory budget. |
-| inkling-small (unsloth/llama.cpp) | Inkling-Small-GGUF UD-IQ3_XXS | auto (`--spec-default`) | 18.76 | 18.12–19.50 | **~0%** | 276B-total/12B-active MoE, ~91GB weights against ~121GB unified memory — loaded fine, no OOM despite the script's own "very tight" warning. Speculative accept rate was ~0% on 5 of 6 files (one hit 4.7%) — whatever draft method Studio auto-selected isn't landing hits on this checkpoint; not chased further. |
+| inkling-small (unsloth/llama.cpp) | Inkling-Small-GGUF UD-IQ3_XXS | auto (`--spec-default`) | 18.76 | 18.12–19.50 | **~0%** | 276B-total/12B-active MoE, ~91GB weights against ~121GB unified memory — loaded fine, no OOM despite the script's own "very tight" warning. Speculative accept rate was ~0% on 5 of 6 files (one hit 4.7%) — see investigation below; root-caused, not a mystery. |
 | gemma4 (vLLM) | gemma-4-31B-it-qat-w4a16-ct | MTP N=4 | — | — | — | **Failed to start.** Crash-loops on this box's current `vllm/vllm-openai:v0.27.1` image: `AmbiguousGlobalPerLayerAttributeError` reading `head_dim` from `transformers`' config layer — gemma4 has heterogeneous per-layer attention (local/global mix with different head dims) and vLLM's config convertor assumes a single global value. Not a resource or timeout issue; every restart hit the same traceback within ~2s. Last known-good run was the v0.26.0 baseline (2026-08-05); something in the v0.26.0→v0.27.1 vLLM/transformers version jump broke it. Needs a real fix (vLLM or transformers version pin/patch) before it can be benchmarked again. |
 
 *vLLM and sglang don't expose per-request draft-accept counts over the
@@ -141,15 +141,31 @@ comparison above.
   because the underlying dense-compute cost per token differs that much
   between model sizes/architectures. Model size and architecture dominate;
   speculative decoding is a second-order effect on top.
-- **`inkling-small`'s near-zero speculative accept rate is a real finding,
-  not noise** — it ran the same file-rotation methodology as
-  `muse-glimmer-30b` and `deepseek-v4-flash-0731`, which both landed
-  44-62% accept, so this isn't a fluke of the test; the auto-selected
-  draft method just isn't compatible with (or well-tuned for) this
-  particular checkpoint. Worth an explicit `--speculative-type off`
-  comparison run if `inkling-small` becomes a regular stack, to see
-  whether disabling speculation entirely is actually faster (avoided
-  wasted draft passes) than the current ~0%-hit-rate default.
+- **`inkling-small`'s near-zero speculative accept rate is root-caused, not
+  a mystery.** `--speculative-type auto` on `unsloth run` translates to the
+  vendored llama.cpp's `--spec-default`, which (per
+  `common/arg.cpp:4712-4726` in `~/.unsloth/llama.cpp`) *unconditionally*
+  enables `NGRAM_MOD` speculation (`n_min=48, n_max=64`) — a pure
+  context-lookup method with **no draft model or MTP head involved at
+  all**. It speculates that the model is about to repeat a 48-64-token
+  span that already appears verbatim in the prompt or prior output. This
+  benchmark's prompts ask for prose explanation/analysis of a pasted
+  source file ("explain what this file does," "summarize the functions"),
+  so the output is almost never a long verbatim repeat of the input —
+  hence ~0% hits. `muse-glimmer-30b` and `deepseek-v4-flash-0731` don't
+  have this problem because they use real draft-model methods (`dflash`,
+  `dspark`) that predict *semantically*, not by string-matching.
+  Ran a same-file A/B to check whether the failed lookups were at least
+  cheap: `--speculative-type off` on the identical model/config gave
+  **19.01 tok/s mean** vs **18.76 tok/s** with `--spec-default` on — a
+  ~1.3% difference, within run-to-run noise. **Conclusion: leaving
+  `--spec-default` on for this checkpoint isn't costing anything** (a
+  failed n-gram lookup is a cheap string scan, not a wasted forward pass
+  the way a failed model-based draft would be), it's just not helping for
+  this prose-generation workload. It would likely pay off on tasks with
+  heavy verbatim overlap between context and output — large diffs/edits,
+  repeated boilerplate, structured-format regeneration — just not on
+  "explain this code" style prompts. No config change needed.
 - **`gemma4` being broken is the most actionable result of this run** — it
   isn't a benchmark artifact, it's a real regression somewhere in the
   v0.26.0→v0.27.1 vLLM/transformers upgrade path that will block *any* use
