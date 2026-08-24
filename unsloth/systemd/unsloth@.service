@@ -1,0 +1,17 @@
+[Unit]
+Description=Unsloth model server (%i)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/jsanz/serve/unsloth
+Environment=PATH=/home/jsanz/.bun/bin:/home/jsanz/.nvm/versions/node/v24.18.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/home/jsanz/.local/bin:/usr/local/cuda/bin:/home/jsanz/.npm-packages/bin
+ExecStart=/bin/bash /home/jsanz/serve/unsloth/%i.sh
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=120
+StartLimitBurst=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

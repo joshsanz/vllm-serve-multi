@@ -13,7 +13,7 @@ which engine directory it lives in.
 |---|---|---|
 | `vllm/` | vLLM | Standalone `docker compose` stack per model. See `vllm/README.md` for the full model table, running instructions, and box-specific notes. |
 | `sglang/` | SGLang | Standalone `docker compose` stack per model. See below. |
-| `unsloth/` | unsloth (llama.cpp-based `unsloth run`) | Standalone launcher script per model, run directly (not compose). See below. |
+| `unsloth/` | unsloth (llama.cpp-based `unsloth run`) | Standalone launcher script per model, run directly (not compose). See `unsloth/README.md` for the model table, running instructions, and a systemd user service for durable (no-tmux-needed) launches. |
 | `ollama/` | Ollama | **unused/deprecated** — kept in the tree but not run; see below. |
 
 ## sglang/
@@ -28,20 +28,6 @@ Run any stack the same way as vLLM's:
 ```bash
 cd sglang/<model-dir>
 HF_TOKEN=... docker compose up -d
-```
-
-## unsloth/
-
-GGUF models served via `unsloth run` (llama.cpp under the hood), invoked
-directly as a script rather than through compose:
-
-| Script | Model | Notes |
-|---|---|---|
-| `deepseek-v4-flash-0731.sh` | `unsloth/DeepSeek-V4-Flash-0731-GGUF:UD-IQ2_M` | ~327K combined context (main + draft budget), 3-way parallel, KV cache quantized to q8_0 |
-| `muse-glimmer-30b.sh` | `unsloth/Muse-Glimmer-30B-GGUF:UD-Q8_K_XL` | dflash speculative decoding, 512K context (4x 128K), unquantized f16 KV cache |
-
-```bash
-./unsloth/<script>.sh
 ```
 
 ## ollama/ (unused/deprecated)
