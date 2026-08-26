@@ -8,7 +8,7 @@
 
 unsloth run \
     --model unsloth/Inkling-Small-GGUF:UD-IQ3_XXS \
-    -c 32768 \
+    -c 262144 \
     --threads 20 \
     --temperature 1.0 --top-p 1.0 --min-p 0.0 \
     -H 0.0.0.0 -p 8000
