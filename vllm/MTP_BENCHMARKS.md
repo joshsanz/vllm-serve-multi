@@ -177,6 +177,59 @@ comparison above.
   `qwen36-27b` (16.40) > `qwen38-27b`/unsloth (15.36, 2026-08-21) >
   `ling-30-flash-int4` (15.08) > `muse-glimmer-30b` (14.35).
 
+## Concurrency-1 benchmark: qwen38-flash-next, MTP NOT engaged (recorded 2026-08-27)
+
+Baseline run of `unsloth/qwen38-flash-next.sh`
+(`unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ4_XS`, ~93.7GB, 177B-total /
+~6B-active + 51B n-gram embed + 4B MTP) recorded **so it can be re-compared
+in a few days when real MTP support for this checkpoint lands**. Same
+methodology as the 2026-08-22 sweep: `bench/bench_llamacpp_timings.py`, 6
+`llama.cpp` source files, 1500-token cap, natural stop, concurrency 1, no
+batching. Raw per-file output in `bench/results/qwen38-flash-next.log`;
+startup-log excerpt in `bench/results/qwen38-flash-next.server.log`.
+
+**MTP is confirmed NOT working on this stack today.** The script passes
+`--speculative-type mtp`, but unsloth studio logs at load time:
+
+```
+"MTP requested but this GGUF has no MTP head or drafter; loading without speculative decoding."
+```
+
+and the `llama-server` it then spawns carries only `--spec-default` (no
+`--model-draft` / MTP head). The per-request `timings` block confirms it —
+no `draft_n` / `draft_n_accepted` fields on most requests, and the two
+files that did show a nonzero "accept%" (1.6%, 11.7%) are `--spec-default`
+NGRAM_MOD context-lookup hits (same mechanism as `inkling-small` above),
+not MTP. So the numbers below are **pure autoregressive decode with no
+speculation** — the "MTP lands" re-run should show a decode-tok/s jump and
+a real 50–70%-style accept rate if it's working.
+
+| File | Prompt tok | Prefill tok/s | Output tok | Decode tok/s | Accept% |
+|---|---|---|---|---|---|
+| server-http.cpp | 8,267 | 511.3 | 1500 | 24.72 | 0.0% |
+| llama-chat.cpp | 11,948 | 499.9 | 644 | 23.82 | 0.0% |
+| llama-memory-recurrent.cpp | 12,289 | 508.5 | 1500 | 23.61 | 1.6%† |
+| server-common.cpp | 17,578 | 458.9 | 1500 | 22.40 | 11.7%† |
+| server-task.cpp | 16,029 | 498.6 | 1500 | 22.99 | 0.0% |
+| llama-quant.cpp | 19,533 | 470.3 | 1500 | 22.26 | 0.0% |
+| **Mean** | | **491.3** | | **23.30** | |
+| **Range** | | 458.9–511.3 | | 22.26–24.72 | |
+
+†NGRAM_MOD `--spec-default` context-lookup hits, not MTP.
+
+**Notes:**
+
+- **23.30 tok/s mean with no speculation already beats every MTP-enabled
+  dense stack on this box** — `qwen38-27b`/unsloth (15.36), `qwen36-27b`
+  (16.40), `qwen38-27b`/vLLM (16.42) — because only ~6B params are active
+  per token. Working MTP should push it higher still.
+- Prefill (~491 tok/s mean) is also markedly faster than `qwen38-27b`'s
+  (~310 tok/s in the 2026-08-21 run) for the same reason.
+- Decode speed decays gently with context (24.7 tok/s at 8k → 22.3 tok/s at
+  19.5k input tokens) — normal attention-cost growth, nothing anomalous.
+- Config at run time: `--spec-draft-n-max 3`, `--parallel 4`, `-c 262144`,
+  f16 KV cache, 20 threads, `reasoning_effort: medium`, thinking mode on.
+
 ## v0.26.0 baseline (recorded 2026-08-05)
 
 Bumped every stack from `vllm/vllm-openai:v0.25.1-ubuntu2404` to

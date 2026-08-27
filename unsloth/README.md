@@ -74,6 +74,7 @@ deepseek-v4-flash-0731.sh   DeepSeek-V4-Flash-0731-GGUF (UD-IQ2_M), dspark specu
 inkling-small.sh            Inkling-Small-GGUF (UD-IQ3_XXS), auto speculative (resolves to ngram-mod, see MTP_BENCHMARKS.md)
 muse-glimmer-30b.sh         Muse-Glimmer-30B-GGUF (UD-Q8_K_XL), dflash speculative decoding
 qwen38-27b.sh                Qwen3.8-27B-GGUF (UD-Q8_K_XL), mtp speculative decoding
+qwen38-flash-next.sh        Qwen3.8-Flash-Next-GGUF (UD-IQ4_XS), mtp requested but not yet supported for this GGUF (see MTP_BENCHMARKS.md, 2026-08-27)
 systemd/unsloth@.service    templated systemd user unit for durable, tmux-free launches
 ```
 
