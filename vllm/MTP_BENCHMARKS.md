@@ -180,7 +180,7 @@ comparison above.
 ## Concurrency-1 benchmark: qwen38-flash-next WITH MTP (recorded 2026-09-01)
 
 Follow-up to the 2026-08-27 baseline below. Engine-side MTP support for this
-checkpoint **landed**, but not through the path the stack currently uses:
+checkpoint **landed**, and `qwen38-flash-next.sh` now enables it.
 
 - **unsloth's llama.cpp fork** (build 10715, at `~/.unsloth/llama.cpp`) now
   has a real `qwen4exp` MTP draft-head graph (`src/models/qwen4exp.cpp`),
@@ -192,69 +192,81 @@ checkpoint **landed**, but not through the path the stack currently uses:
   `MTP/` (not baked into the quant): `mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf`
   (2.60 GB, recommended — borrows token-embd + output proj from the main
   model), plus `-Q4_K_M` / `-BF16` and self-contained variants.
-- **`unsloth run` (studio 2026.8.22) still can't drive it.** It reads
-  `--speculative-type mtp`, checks the *main* `UD-IQ4_XS` quant for a
-  baked-in MTP head, doesn't find one (correct — it's a separate file now),
-  logs `"MTP requested but this GGUF has no MTP head or drafter; loading
-  without speculative decoding."`, and falls back to `--spec-default`
-  n-gram. The `qwen38-flash-next.sh` stack as committed is therefore still
-  running with **no MTP** — the 2026-08-27 numbers remain current for it.
 
-This run **bypassed `unsloth run`** and invoked `llama-server` directly:
+**Getting it running through `unsloth run` — three dead ends first:**
+
+1. Studio's own `--speculative-type mtp` checks the *main* `UD-IQ4_XS`
+   quant for a baked-in MTP head, doesn't find one, and falls back to
+   `--spec-default` n-gram (`"MTP requested but this GGUF has no MTP head
+   or drafter"`).
+2. Passing `--hf-repo-draft unsloth/Qwen3.8-Flash-Next-GGUF:shared-Q8_0`
+   through to llama-server: the quant matcher doesn't look in the repo's
+   `MTP/` subdir, so it resolves to an empty path and llama-server dies
+   with `failed to load draft model, ''`.
+3. `hf download` (as used to resolve a filesystem path in the launcher)
+   prints `path=<path>` in its default "agent" output format — the
+   `path=` prefix has to be stripped, or use `--quiet`.
+
+**What works** — `unsloth run` forwards unrecognized args to `llama-server`
+verbatim, so the committed `qwen38-flash-next.sh` now resolves the sidecar
+head from the HF cache and passes:
 
 ```
-~/.unsloth/llama.cpp/llama-server \
-  -m .../UD-IQ4_XS/Qwen3.8-Flash-Next-UD-IQ4_XS-00001-of-00003.gguf \
-  -md .../MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf \
-  --spec-type draft-mtp --spec-draft-n-max 2 \
-  --parallel 4 -c 262144 --flash-attn on --cache-type-k f16 --cache-type-v f16 \
-  --threads 20 --jinja
+--model-draft <cache>/…/MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf
+--spec-type draft-mtp
 ```
 
-The draft model loaded cleanly (`common_speculative_init_result: loading
-draft model '...shared-Q8_0.gguf'`, no rejection — the shared-tensor
-borrow worked). Same 6-file `bench_llamacpp_timings.py` methodology as
-every run in this doc. Raw output: `bench/results/qwen38-flash-next-mtp.log`.
+plus `LLAMA_ARG_SPEC_DRAFT_N_MAX=2` as an **env var** (studio swallows
+`--spec-draft-n-max` as its own flag and won't forward it). Load log:
+`common_speculative_init_result: loading draft model '…shared-Q8_0.gguf'`
+then `model loaded`. (One benign `borrow_shared_tensor: … load it as a
+draft of its target model` error appears first — that's studio's memory
+pre-measurement pass trying to load the head standalone; it retries
+correctly.)
+
+Benchmarked through the actual systemd stack (`--fit on`, n_max=2, mmproj
+loaded), same 6-file `bench_llamacpp_timings.py` methodology as every run
+in this doc. Raw output: `bench/results/qwen38-flash-next-mtp.log`.
 
 | File | Prompt tok | Prefill tok/s | Decode tok/s | Accept% |
 |---|---|---|---|---|
-| server-http.cpp | 8,309 | 512.4 | 35.44 | 59.0% |
-| llama-chat.cpp | 11,990 | 526.5 | 35.41 | 61.9% |
-| llama-memory-recurrent.cpp | 13,077 | 520.4 | 30.60 | 48.1% |
-| server-common.cpp | 17,694 | 512.6 | 32.43 | 57.0% |
-| server-task.cpp | 16,071 | 518.6 | 33.12 | 59.2% |
-| llama-quant.cpp | 19,101 | 508.6 | 33.03 | 60.2% |
-| **Mean** | | **516.5** | **33.34** | **57.6%** |
-| **Range** | | 508.6–526.5 | 30.60–35.44 | 48.1–61.9% |
+| server-http.cpp | 8,267 | 529.7 | 40.40 | 75.2% |
+| llama-chat.cpp | 11,948 | 529.4 | 39.96 | 74.5% |
+| llama-memory-recurrent.cpp | 13,035 | 523.9 | 37.31 | 67.4% |
+| server-common.cpp | 17,652 | 512.4 | 37.52 | 72.4% |
+| server-task.cpp | 16,029 | 519.0 | 37.85 | 72.6% |
+| llama-quant.cpp | 19,059 | 510.9 | 37.02 | 72.9% |
+| **Mean** | | **520.9** | **38.34** | **72.5%** |
+| **Range** | | 510.9–529.7 | 37.02–40.40 | 67.4–75.2% |
 
 **MTP vs. no-MTP baseline (2026-08-27), same box, same methodology:**
 
 | | Decode tok/s (mean) | Accept% |
 |---|---|---|
 | No MTP (`--spec-default` n-gram) | 23.30 | ~0 (2 files hit 1.6% / 11.7%) |
-| **MTP (`draft-mtp`, shared-Q8_0, N=2)** | **33.34** | **57.6%** |
-| Speedup | **1.43×** | |
+| **MTP (`draft-mtp`, shared-Q8_0, N=2)** | **38.34** | **72.5%** |
+| Speedup | **1.65×** | |
 
 **Notes:**
 
-- **1.43× decode speedup**, in the middle of unsloth's own "1.3–1.7× at
-  low concurrency" claim (their `MTP/README.md`). Server-side
-  `draft acceptance` log lines corroborate the client-side accept%
-  (0.48–0.62, mean draft len ~2.1–2.2 at N=2).
-- Prefill is unchanged (~516 vs ~491 tok/s, within noise) — MTP only
+- **1.65× decode speedup**, near the top of unsloth's own "1.3–1.7× at
+  low concurrency" claim (their `MTP/README.md`) despite this not being a
+  greedy run. Server-side `draft acceptance` log lines corroborate the
+  client-side accept% (0.67–0.75, mean draft len ~2.4–2.5 at N=2).
+- An earlier same-day run via a bare `llama-server` invocation (`--fit
+  off -ngl -1`, no mmproj, thinking-kwargs only — no `reasoning_effort`)
+  measured lower: 33.34 tok/s / 57.6% accept / 1.43×. The stack config
+  above (matching the committed script) is the one that counts; the gap
+  is most plausibly the draft head landing fully GPU-resident under
+  `--fit on` and/or the `reasoning_effort: medium` prompt shaping.
+- Prefill is unchanged (~521 vs ~491 tok/s, within noise) — MTP only
   touches decode.
-- These prompts run at the HF-recommended thinking-mode sampler
-  (temp 1.0 / top-p 0.95 / top-k 20), **not greedy** — unsloth's headline
-  1.67× is a greedy number, so 1.43× at temp 1.0 is consistent with their
-  "higher temperature → less predictable → smaller speedup" caveat.
 - unsloth's `MTP/README.md` says **skip MTP for concurrent serving**
   (measured net loss ~0.81–0.87× at concurrency 8) — fine here, this box
   runs one coding agent at a time.
-- **To make `qwen38-flash-next.sh` actually use this**: either wait for a
-  studio release that auto-fetches the `MTP/` sidecar, or convert the
-  script to a direct `llama-server` invocation with the `-md` +
-  `--spec-type draft-mtp` flags above. Not changed yet — flagged for a
-  follow-up once studio support (or a decision to bypass it) lands.
+- If studio later grows native sidecar-MTP support, revisit
+  `qwen38-flash-next.sh` — the manual `--model-draft` passthrough can
+  probably go back to a plain `--speculative-type mtp`.
 
 ## Concurrency-1 benchmark: qwen38-flash-next, MTP NOT engaged (recorded 2026-08-27)
 
