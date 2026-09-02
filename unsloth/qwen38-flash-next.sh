@@ -1,22 +1,16 @@
 #!/bin/bash
-# Qwen3.8-Flash-Next — 177B params / 6B active + 51B n-gram embed / 4B MTP
-# Recommended from https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF
-# Downloaded quant in cache is UD-IQ4_XS (~93.7 GB per HF card). Matches
-# unified memory — ~93.7 GB IQ4_XS, comfortable headroom. Thinking
-# mode is on by default; sampling uses HF-recommended thinking-mode params.
+# Qwen3.8-Flash-Next — 177B params / 6B active + 51B n-gram embed / 4B MTP.
+# UD-IQ4_XS (~93.7 GB): fits 121 GB
+# unified with a 256k KV cache; UD-Q4_K_XL (upstream's pick) does not.
 #
-# MTP speculative decoding: as of unsloth studio 2026.8.22, studio's own
-# `--speculative-type mtp` doesn't work for this model — it looks for an MTP
-# head baked into the main quant, doesn't find one (the head ships as a
-# separate sidecar GGUF under MTP/ in the repo), and silently falls back to
-# n-gram. `--hf-repo-draft ...:quant` also fails — llama.cpp's quant matcher
-# doesn't look in the repo's MTP/ subdir. What works: hand llama-server an
-# explicit filesystem path to the sidecar head via the long-form
-# --model-draft (unsloth run forwards unrecognized args verbatim), plus
-# --spec-type draft-mtp to select the MTP graph. The head borrows token-embd
-# + output proj from the main model. n_max is set via env var because
-# unsloth swallows --spec-draft-n-max as its own flag. Measured 1.43x decode
-# speedup at concurrency 1, ~58% draft acceptance — see
+# MTP spec decoding, per unsloth.ai/docs/models/qwen3.8-next:
+#   llama-server -hf ...:<quant> -md <repo>/MTP/mtp-...-shared-Q8_0.gguf \
+#     --spec-type draft-mtp --spec-draft-n-max N
+# The head is a separate sidecar under MTP/ (not in the main quant), so
+# studio's --speculative-type mtp / --hf-repo-draft can't find it. We resolve
+# the cached sidecar and pass it via --model-draft (unsloth run forwards it
+# verbatim). n_max via env var: studio swallows --spec-draft-n-max.
+# n_max 2 measured best here (1.65x / 72.5% accept, c=1); see
 # ../vllm/MTP_BENCHMARKS.md (2026-09-01).
 
 set -euo pipefail
