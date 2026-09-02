@@ -29,7 +29,7 @@ if [ ! -f "$DRAFT_HEAD" ]; then
 fi
 echo "qwen38-flash-next: MTP draft head -> $DRAFT_HEAD" >&2
 
-LLAMA_ARG_SPEC_DRAFT_N_MAX=2 unsloth run \
+LLAMA_ARG_SPEC_DRAFT_N_MAX=3 unsloth run \
     --model unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ4_XS \
     --parallel 4 \
     -c 262144 \
