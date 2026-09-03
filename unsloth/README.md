@@ -70,13 +70,16 @@ this is adapted for another box, that line needs updating to match.
 ## Layout
 
 ```
-deepseek-v4-flash-0731.sh   DeepSeek-V4-Flash-0731-GGUF (UD-IQ2_M), dspark speculative decoding
 inkling-small.sh            Inkling-Small-GGUF (UD-IQ3_XXS), auto speculative (resolves to ngram-mod, see MTP_BENCHMARKS.md)
-muse-glimmer-30b.sh         Muse-Glimmer-30B-GGUF (UD-Q8_K_XL), dflash speculative decoding
-qwen38-27b.sh                Qwen3.8-27B-GGUF (UD-Q8_K_XL), mtp speculative decoding
 qwen38-flash-next.sh        Qwen3.8-Flash-Next-GGUF (UD-IQ4_XS), mtp speculative decoding via sidecar head passed through to llama-server as `--model-draft ... --spec-type draft-mtp` (studio's own `--speculative-type mtp` can't find the split-out head); 1.65x decode, ~72% accept (see MTP_BENCHMARKS.md, 2026-09-01)
+archive/                    launcher recipes for models no longer cached on the box
 systemd/unsloth@.service    templated systemd user unit for durable, tmux-free launches
 ```
+
+`archive/` holds launcher recipes whose weights were removed from the HF
+cache (2026-09-03) to keep the studio `/v1/models` cold scan fast — it
+parses GGUF headers for every cached model on each rebuild. To bring one
+back: `hf download` the repo, then move the script up out of `archive/`.
 
 See `../vllm/MTP_BENCHMARKS.md` for throughput benchmarks across these
 stacks (and every other cached model on the box).

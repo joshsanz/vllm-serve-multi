@@ -21,7 +21,6 @@ which engine directory it lives in.
 | Directory | Model | Notes |
 |---|---|---|
 | `laguna/` | `poolside/Laguna-S-2.1-NVFP4` | **parked** — sglang lacks upstream fixes vLLM already has for this model on SM12x; see `laguna/README.md` for the full root-cause writeup. Serving moved to `../vllm/laguna-s-21/`. |
-| `ling-30-flash-int4/` | `inclusionAI/Ling-3.0-flash-int4` | hybrid Mamba+MoE, NEXTN (MTP) speculative decoding; adapted from inclusionAI's official 2-GPU recipe down to this box's single GPU (`--tp-size 1`, no dist-init needed) |
 
 Run any stack the same way as vLLM's:
 
@@ -29,6 +28,12 @@ Run any stack the same way as vLLM's:
 cd sglang/<model-dir>
 HF_TOKEN=... docker compose up -d
 ```
+
+`sglang/archive/` holds compose recipes whose weights were removed from the
+HF cache (2026-09-03) to reclaim disk — currently the `ling-30-flash-int4/`
+(`inclusionAI/Ling-3.0-flash-int4`, hybrid Mamba+MoE, NEXTN/MTP speculative
+decoding) stack. Move a dir up out of `archive/` and let sglang re-download
+on first `up -d` to revive it.
 
 ## ollama/ (unused/deprecated)
 

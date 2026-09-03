@@ -8,7 +8,7 @@
 # the hybrid KV cache with no extra flags (confirmed via vLLM's own
 # Qwen3-Next recipe, which serves that hybrid family with a bare `-tp N`
 # and nothing hybrid-specific). Settings below otherwise mirror
-# ../qwen36-27b/ (same size class, same FP8 quant, validated on this box),
+# ../archive/qwen36-27b/ (same size class, same FP8 quant, validated on this box),
 # adapted from Qwen's official recipe
 # (https://huggingface.co/Qwen/Qwen3.8-27B-FP8, 4x-Blackwell FP8 profile)
 # down to this box's single GPU:

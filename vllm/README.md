@@ -46,9 +46,7 @@ GPU memory to spare for two at once.
 | `gemma4/` | `google/gemma-4-31B-it-qat-w4a16-ct` | |
 | `ornith/` | `deepreinforce-ai/Ornith-1.0-35B-FP8` | model overridable via `MODEL` env var |
 | `laguna-s-21/` | `poolside/Laguna-S-2.1-NVFP4` | dflash speculative decoding |
-| `qwen36-27b/` | `Qwen/Qwen3.6-27B-FP8` | |
 | `qwen38-27b/` | `Qwen/Qwen3.8-27B-FP8` | dense hybrid attention (Gated DeltaNet + full attention); vLLM auto-manages the hybrid KV cache, no extra flags needed |
-| `qwen36-35b-a3b/` | `Qwen/Qwen3.6-35B-A3B-FP8` | |
 | `kat-coder-v25-dev-awq/` | `cyankiwi/KAT-Coder-V2.5-Dev-AWQ-INT4` | fine-tune of Qwen3.6-35B-A3B, INT4 compressed-tensors quant, no speculative decoding |
 | `nemotron-35-lightning-dspark/` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` | hybrid Mamba-2+MoE+Attention, DSpark speculative decoding, NVIDIA's DGX Spark recipe |
 
@@ -57,8 +55,13 @@ compose recreates the container in place instead of requiring a manual
 `docker rm -f` first.
 
 See `MTP_BENCHMARKS.md` for throughput benchmarks across these stacks
-(note: the qwen36 stacks have since been pinned to fp8-only, dropping the
-nvfp4 profile the benchmarks favored).
+(note: it also covers the archived `qwen36-27b`/`qwen36-35b-a3b` stacks,
+which were pinned to fp8-only, dropping the nvfp4 profile it favored).
+
+`archive/` holds compose recipes whose weights were removed from the HF
+cache (2026-09-03) to reclaim disk. To bring one back: `docker compose pull`
+/ let vLLM re-download on first `up -d`, then move the dir up out of
+`archive/`.
 
 ## nemotron-3-super.sh
 
@@ -81,14 +84,13 @@ final content isn't dropped into `reasoning_content` when it shouldn't be.
 gemma4/docker-compose.yml              standalone gemma4 stack
 ornith/docker-compose.yml              standalone Ornith-1.0 stack
 laguna-s-21/docker-compose.yml         standalone Laguna-S-2.1 stack
-qwen36-27b/docker-compose.yml          standalone Qwen3.6-27B stack (fp8)
 qwen38-27b/docker-compose.yml          standalone Qwen3.8-27B stack (fp8, hybrid attention)
-qwen36-35b-a3b/docker-compose.yml      standalone Qwen3.6-35B-A3B stack (fp8)
 kat-coder-v25-dev-awq/docker-compose.yml  standalone KAT-Coder-V2.5-Dev-AWQ-INT4 stack
 nemotron-35-lightning-dspark/docker-compose.yml  standalone Nemotron-3.5-Lightning stack (DSpark speculative decoding)
 MTP_BENCHMARKS.md                      throughput benchmark results across stacks
 nemotron-3-super.sh                    standalone Nemotron 3 Super launcher
 super_v3_reasoning_parser.py           reasoning parser plugin for Nemotron 3
+archive/                               compose recipes for models no longer cached on the box
 router/                                retired FastAPI swap-aware proxy (unused)
   app/main.py                            routes + request dispatch
   app/config.py                          served-model registry
