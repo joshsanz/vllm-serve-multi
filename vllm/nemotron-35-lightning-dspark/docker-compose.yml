@@ -40,7 +40,7 @@ x-gpu: &default-gpu
 
 services:
   nemotron-35-lightning-dspark:
-    image: vllm/vllm-openai:v0.27.1-ubuntu2404
+    image: vllm/vllm-openai:v0.28.0-ubuntu2404
     container_name: nemotron-35-lightning-dspark
     restart: unless-stopped
     logging: *default-logging

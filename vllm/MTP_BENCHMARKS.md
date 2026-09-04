@@ -456,6 +456,44 @@ N=3 (158 tok/s) and nvfp4+MTP N=3 (249 tok/s) despite having no draft
 assist, likely thanks to the INT4 quant and the hybrid linear-attention
 layers being cheaper per step than plain attention.
 
+## qwen38-27b / fp8 — DFlash2 vs MTP (recorded 2026-09-04)
+
+vLLM `v0.28.0` adds a `DFlash2DraftModel` registry entry (`v0.27.1` rejected
+it with `Model architectures ['DFlash2DraftModel'] are not supported` — see
+the now-resolved `dflash2-dspark-unsupported` note). Bumped all `vllm/`
+stacks to `v0.28.0-ubuntu2404` and swapped `qwen38-27b`'s
+`--speculative-config` from MTP (`num_speculative_tokens: 3`) to DFlash2:
+
+```
+{"method":"dflash","num_speculative_tokens":7,"model":"incoai/Qwen3.8-27B-DFlash2"}
+```
+
+(`method` is `"dflash"` for both DFlash1 and DFlash2 — vLLM distinguishes
+them by the draft checkpoint's `architectures` field, not a separate method
+name. `num_speculative_tokens: 7` mirrors the working `laguna-s-21` DFlash
+config and matches the drafter's own `block_size: 8` in `dflash_config`.)
+Loaded clean: architecture resolved as `DFlash2DraftModel`, CUDA graphs
+captured for 48 shapes, no errors.
+
+Same concurrency-1 agentic-shaped methodology as the 2026-08-21 run
+(`bench/bench_openai_client_timed.py`, 6 real source files, natural stop,
+1500-token cap). Raw output in `bench/results/qwen38-dflash2.log`.
+
+| File | Prompt tok | MTP decode tok/s (2026-08-21) | DFlash2 decode tok/s (2026-09-04) |
+|---|---|---|---|
+| server-http.cpp | ~8.3k | 16.39 | 23.05 |
+| llama-chat.cpp | 11,948 | 16.42 | 22.06 |
+| llama-memory-recurrent.cpp | ~13k | 15.33 | 20.48 |
+| server-common.cpp | ~17.5k | 17.32 | 23.68 |
+| server-task.cpp | 16,029 | 16.30 | 23.05 |
+| llama-quant.cpp | ~19k | 16.77 | 24.79 |
+| **Mean** | | **16.42** | **22.85** |
+
+**DFlash2 beats MTP by ~39% on single-stream decode speed** on this stack
+(22.85 vs 16.42 tok/s mean), the biggest speculative-decoding win recorded
+in this doc for a dense (non-MoE) model. `qwen38-27b/docker-compose.yml` now
+uses DFlash2 as its default speculative config.
+
 ## Summary / recommendations
 
 - **qwen36-27b**: bump `num_speculative_tokens` from 3 → **4** on the nvfp4 profile for a modest (~5%) throughput gain. Avoid the fp8 profile — it's slower and showed unexplained request failures under load at N=4/N=6.

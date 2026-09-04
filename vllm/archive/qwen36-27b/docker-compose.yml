@@ -23,7 +23,7 @@ x-gpu: &default-gpu
 
 services:
   qwen36-fp8:
-    image: vllm/vllm-openai:v0.27.1-ubuntu2404
+    image: vllm/vllm-openai:v0.28.0-ubuntu2404
     container_name: qwen36-27b
     restart: unless-stopped
     logging: *default-logging

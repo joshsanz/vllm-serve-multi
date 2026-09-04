@@ -36,7 +36,7 @@ x-gpu: &default-gpu
 
 services:
   qwen38-fp8:
-    image: vllm/vllm-openai:v0.27.1-ubuntu2404
+    image: vllm/vllm-openai:v0.28.0-ubuntu2404
     container_name: qwen38-27b
     restart: unless-stopped
     logging: *default-logging
@@ -78,7 +78,7 @@ services:
       - --attention-backend
       - flashinfer
       - --speculative-config
-      - '{"method":"mtp","num_speculative_tokens":3}'
+      - '{"method":"dflash","num_speculative_tokens":7,"model":"incoai/Qwen3.8-27B-DFlash2"}'
       - --enable-prefix-caching
       - -tp
       - "1"
