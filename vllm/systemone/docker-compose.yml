@@ -1,0 +1,48 @@
+# System One decision models (vLLM Semantic Router "vllm-srun" runtime): d3 (27B) + Vela 2.0 9B
+# served from one process on :8000.
+#
+#   docker compose up -d --build        # first start downloads ~70 GB of weights
+#   curl localhost:8000/v1/models
+#   curl localhost:8000/v1/decisions -H 'content-type: application/json' -d '{"model":"vllm-sr/d3", ...}'
+#
+# Upstream has no arm64+CUDA image, so ./Dockerfile layers the runtime on the vLLM image
+# (aarch64 CUDA torch). Its CUDA path is upstream-"unvalidated". Edit models.yaml to swap
+# models (e.g. vllm-sr/Vela-2.0-4B, vllm-sr/d3-flash). Memory: d3 ~62-65 GiB + Vela 9B
+# ~32 GB of the ~121 GiB pool; stop other stacks first (one stack at a time).
+#
+# Gotcha: on this unified-memory box the runtime's placement check counts page cache as used,
+# so right after the weights download Vela 9B fails with "4.3 GiB free". Drop the cache and
+# restart (the load itself refills it, so drop it during startup too):
+#   sudo sh -c 'echo 1 > /proc/sys/vm/drop_caches'; docker compose restart
+# Measured warm: d3 ~0.34 s, Vela 9B ~0.14 s for a 2-question request; ~78 GiB in use total.
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "10m", max-file: "3"}
+
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - {driver: nvidia, count: all, capabilities: [gpu]}
+
+services:
+  systemone:
+    <<: *gpu
+    build: .
+    image: systemone:local
+    container_name: systemone
+    restart: unless-stopped
+    logging: *logging
+    ports:
+      - "8000:8000"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ./models.yaml:/etc/vllm-srun/models.yaml:ro
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+    command:
+      - serve
+      - --models=/etc/vllm-srun/models.yaml
+      - --host=0.0.0.0
+      - --port=8000
