@@ -123,7 +123,7 @@ assigned on that particular run, not a fixed convention.
 | qwen36-27b (vLLM) | Qwen3.6-27B-FP8 | MTP N=3 | 16.40 | 15.02–17.29 | n/a* | Matches qwen38-27b/FP8's 16.42 tok/s from 2026-08-21 almost exactly. |
 | qwen36-35b-a3b (vLLM) | Qwen3.6-35B-A3B-FP8 | MTP N=3 | **58.88** | 55.88–62.88 | n/a* | Fastest stack overall — MoE, ~3B active params/token. |
 | ling-30-flash-int4 (sglang) | Ling-3.0-flash-int4 | NEXTN | 15.08 | 12.96–17.50 | n/a* | First TTFT (51s, cold file) far higher than the rest — likely first-request JIT/kernel warmup, not representative of steady state. |
-| muse-glimmer-30b (unsloth/llama.cpp) | Muse-Glimmer-30B-GGUF Q8_K_XL | dflash (v1) | 14.35 | 13.27–15.43 | 43.8–57.1% | Own bundled `dflash-kquant.gguf` draft, not the broken DFlash2 checkpoint (see `[[dflash2-dspark-unsupported]]`). |
+| muse-glimmer-30b (unsloth/llama.cpp) | Muse-Glimmer-30B-GGUF Q8_K_XL | dflash (v1) | 14.35 | 13.27–15.43 | 43.8–57.1% | Own bundled `dflash-kquant.gguf` draft, recorded before the standalone DFlash2 checkpoint below was fixed upstream (see `[[dflash2-dspark-unsupported]]` and the 2026-09-08 section below). |
 | deepseek-v4-flash-0731 (unsloth/llama.cpp) | DeepSeek-V4-Flash-0731-GGUF UD-IQ2_M | dspark | 28.94 | 26.78–30.70 | 48.4–62.4% | Largest checkpoint run (~95GB); loaded and benchmarked cleanly despite the tight memory budget. |
 | inkling-small (unsloth/llama.cpp) | Inkling-Small-GGUF UD-IQ3_XXS | auto (`--spec-default`) | 18.76 | 18.12–19.50 | **~0%** | 276B-total/12B-active MoE, ~91GB weights against ~121GB unified memory — loaded fine, no OOM despite the script's own "very tight" warning. Speculative accept rate was ~0% on 5 of 6 files (one hit 4.7%) — see investigation below; root-caused, not a mystery. |
 | gemma4 (vLLM) | gemma-4-31B-it-qat-w4a16-ct | MTP N=4 | — | — | — | **Failed to start.** Crash-loops on this box's current `vllm/vllm-openai:v0.27.1` image: `AmbiguousGlobalPerLayerAttributeError` reading `head_dim` from `transformers`' config layer — gemma4 has heterogeneous per-layer attention (local/global mix with different head dims) and vLLM's config convertor assumes a single global value. Not a resource or timeout issue; every restart hit the same traceback within ~2s. Last known-good run was the v0.26.0 baseline (2026-08-05); something in the v0.26.0→v0.27.1 vLLM/transformers version jump broke it. Needs a real fix (vLLM or transformers version pin/patch) before it can be benchmarked again. |
@@ -494,8 +494,156 @@ Same concurrency-1 agentic-shaped methodology as the 2026-08-21 run
 in this doc for a dense (non-MoE) model. `qwen38-27b/docker-compose.yml` now
 uses DFlash2 as its default speculative config.
 
+## muse-glimmer-30b — DFlash2 (incoai, BF16) vs bundled dflash-kquant (recorded 2026-09-08)
+
+Follow-up to the 2026-08-22 row above. `incoai/Muse-Glimmer-30B-DFlash2-GGUF`
+previously failed to load (`wrong number of tensors; expected 81, got 58`,
+see `[[dflash2-dspark-unsupported]]`, 2026-08-20). Updated `unsloth` to
+`2026.9.3` / vendored llama.cpp to build 10840 (commit `58670d128`, from
+build 10715) on 2026-09-08 and retried — the draft now loads and serves
+cleanly. New recipe: `unsloth/muse-glimmer-30b.sh`, resolving the cached BF16
+draft file and passing `--model-draft <path> --spec-type draft-dflash` with
+`LLAMA_ARG_SPEC_DRAFT_N_MAX=15` (the draft repo's own README-recommended
+value; `block_size=16`), vs. the 2026-08-22 run's bundled `dflash-kquant.gguf`
+at `n_max=3`. Also fixed `-c` down from `131072*4` to a plain `131072` — the
+larger value was silently capped back to the model's native context by
+`--kv-unified` anyway (harmless, but worth not carrying forward).
+
+Same `bench/bench_llamacpp_timings.py` methodology (6 real source files,
+concurrency-1, natural stop, 1500-token cap). Raw output in
+`bench/results/muse-glimmer-30b-dflash2.log`.
+
+| File | Prompt tok | dflash-kquant decode tok/s (2026-08-22, accept%) | DFlash2 BF16 decode tok/s (2026-09-08, accept%) |
+|---|---|---|---|
+| server-http.cpp | ~7.6k | 14.31 (47.7%) | 14.68 (12.6%) |
+| llama-chat.cpp | 11,033 | 15.28 (53.9%) | 16.82 (15.5%) |
+| llama-memory-recurrent.cpp | ~11.5k | 13.27 (43.8%) | 12.32 (9.6%) |
+| server-common.cpp | ~16k | 15.43 (57.1%) | 12.84 (10.3%) |
+| server-task.cpp | 14,501–14,508 | 13.86 (46.0%) | 14.42 (12.4%) |
+| llama-quant.cpp | ~17–18k | 13.97 (47.4%) | 15.13 (13.4%) |
+| **Mean** | | **14.35** | **14.37** |
+
+**Essentially a wash on this workload** — the standalone DFlash2 BF16 draft
+(n_max=15, block_size 16) lands within noise of the bundled dflash-kquant
+draft (n_max=3) despite a ~4x lower accept rate (9.6–15.5% vs 43.8–57.1%).
+Plausible reason: at block_size 16 a low-percentage accept rate can still
+yield a similar number of *net* accepted tokens per verification step as a
+high-percentage accept rate at block_size 3 (e.g. ~12% of 16 ≈ 1.9 tokens/step
+vs ~50% of 3 ≈ 1.5 tokens/step) — not confirmed against llama.cpp's per-step
+accounting, just consistent with the numbers. A quick smoke-test chat
+completion (short "say hello" prompt, not part of this suite) hit 67.5%
+accept, so acceptance rate on this drafter varies a lot with how
+predictable the target's continuation is — this benchmark's reasoning-heavy
+code-explanation prompts are a harder case for it than short factual
+replies. Not enough evidence here to prefer one draft over the other; both
+give ~14.3-14.4 tok/s mean decode on this box for this model. Worth
+retrying with a lower `n_max` (e.g. 5-8) if revisited, since the upstream
+README's recommended 15 wasn't tuned for this workload shape.
+
+**Follow-up same day: also tried the Q8_0 draft quant** (same repo,
+`Muse-Glimmer-30B-DFlash2-Q8_0.gguf`, 2.8 GB vs BF16's 5.2 GB), same
+`n_max=15`, same benchmark suite. Raw output in
+`bench/results/muse-glimmer-30b-dflash2-q8.log`.
+
+| File | BF16 decode tok/s (accept%) | Q8_0 decode tok/s (accept%) |
+|---|---|---|
+| server-http.cpp | 14.68 (12.6%) | 16.23 (13.7%) |
+| llama-chat.cpp | 16.82 (15.5%) | 17.28 (15.0%) |
+| llama-memory-recurrent.cpp | 12.32 (9.6%) | 14.41 (11.5%) |
+| server-common.cpp | 12.84 (10.3%) | 12.66 (9.3%) |
+| server-task.cpp | 14.42 (12.4%) | 15.91 (13.4%) |
+| llama-quant.cpp | 15.13 (13.4%) | 15.60 (13.1%) |
+| **Mean** | **14.37** | **15.35** |
+
+**Q8_0 wins outright: ~6.8% faster mean decode at essentially the same
+accept rate as BF16** (both cluster 9-15%). Makes sense — same
+predictions, cheaper drafter forward pass per verification step, so no
+accuracy tradeoff for the speed gain. If sticking with the standalone
+incoai DFlash2 checkpoint over the bundled dflash-kquant draft, Q8_0 looks
+like the better quant to default to, not BF16.
+
+## muse-glimmer-30b — UD-Q8_K_XL vs UD-Q4_K_XL, same DFlash2 Q8_0 drafter (recorded 2026-09-08)
+
+Prompted by a third-party recipe ([sxuff/muse-glimmer-dgx-spark on
+GitHub](https://github.com/sxuff/muse-glimmer-dgx-spark)) reporting 27.9
+tok/s with DFlash on Meta's own "K-Quant-Dynamic" quant (unsloth's
+`UD-Q4_K_XL`, ~15.9 GB) vs our 15.35 tok/s on `UD-Q8_K_XL` (~32.3 GB) — same
+model, same DFlash-family speculative decoding, different base quant.
+Downloaded `UD-Q4_K_XL` and re-ran the identical benchmark suite (same
+Q8_0 DFlash2 drafter, `n_max=15`, `-c 131072`, `--parallel 4`) for a
+same-box, same-methodology comparison. Raw output in
+`bench/results/muse-glimmer-30b-q4k-dflash2-q8.log`.
+
+| File | Q8_K_XL decode tok/s (accept%) | Q4_K_XL decode tok/s (accept%) |
+|---|---|---|
+| server-http.cpp | 16.23 (13.7%) | 25.40 (13.4%) |
+| llama-chat.cpp | 17.28 (15.0%) | 28.09 (15.6%) |
+| llama-memory-recurrent.cpp | 14.41 (11.5%) | 22.70 (11.4%) |
+| server-common.cpp | 12.66 (9.3%) | 21.06 (10.1%) |
+| server-task.cpp | 15.91 (13.4%) | 25.94 (14.0%) |
+| llama-quant.cpp | 15.60 (13.1%) | 25.66 (13.8%) |
+| **Mean** | **15.35** | **24.81** |
+
+**Q4_K_XL is ~62% faster mean decode than Q8_K_XL** (24.81 vs 15.35 tok/s),
+at essentially identical accept rates (both 9-16%) — confirms the base
+model's own weight bandwidth, not the drafter, is the dominant cost on this
+box's memory-bandwidth-bound single-stream decoding. Prefill speed also
+improved (877-896 tok/s vs 741-757 tok/s) since prefill is partly
+compute-bound on weight size too. Per Meta's own model card, `UD-Q4_K_XL`
+("K-Quant-Dynamic") costs only ~0.2% average degradation across 15
+benchmarks vs full precision — a good trade for close to 2x the throughput.
+This is now the bigger lever than drafter-quant choice (BF16 vs Q8_0, only
+~7% apart, see above).
+
+## muse-glimmer-30b — full drafter sweep on UD-Q4_K_XL (recorded 2026-09-08)
+
+Once `UD-Q4_K_XL` was established as the faster base quant (above), swept
+all four available drafters against it, same benchmark suite, same
+`n_max=15`, `-c 131072`, `--parallel 4`: the bundled `dflash-kquant.gguf`
+(ships in `unsloth/Muse-Glimmer-30B-GGUF` itself, 1.6 GB, DFlash-v1-family
+per `[[dflash2-dspark-unsupported]]`) and all three incoai DFlash2 quants
+(Q4_K_M 1.6 GB, Q8_0 2.8 GB, BF16 5.2 GB). Raw output in `bench/results/muse-glimmer-30b-q4k-bundled-dflash-kquant.log`,
+`muse-glimmer-30b-q4k-incoai-q4km.log`, `muse-glimmer-30b-q4k-dflash2-q8.log`
+(the Q8_0 run from the base-quant comparison above, same config), and
+`muse-glimmer-30b-q4k-incoai-bf16.log`.
+
+| File | bundled dflash-kquant | incoai Q4_K_M | incoai Q8_0 | incoai BF16 |
+|---|---|---|---|---|
+| server-http.cpp | 26.04 (12.6%) | 26.08 (12.9%) | 25.40 (13.4%) | 24.07 (13.9%) |
+| llama-chat.cpp | 35.50 (19.9%)† | 29.33 (15.6%) | 28.09 (15.6%) | 27.69 (16.8%) |
+| llama-memory-recurrent.cpp | 22.50 (10.2%) | 24.38 (11.9%) | 22.70 (11.4%) | 23.61 (13.3%) |
+| server-common.cpp | 23.79 (11.3%) | 24.21 (11.8%) | 21.06 (10.1%) | 21.39 (11.4%) |
+| server-task.cpp | 23.83 (11.4%) | 25.98 (13.1%) | 25.94 (14.0%) | 21.62 (11.7%) |
+| llama-quant.cpp | 26.03 (13.3%) | 25.68 (12.9%) | 25.66 (13.8%) | 22.48 (12.7%) |
+| **Mean** | **26.28** | **25.94** | **24.81** | **23.48** |
+| Median | 24.93 | 25.83 | 25.53 | 23.05 |
+
+† llama-chat.cpp on the bundled drafter is a clear outlier (35.50 vs
+27-29 tok/s everywhere else for that file) — single-run noise, not
+re-verified; median is a better read on this drafter's typical performance
+than mean.
+
+**Smaller/cheaper drafters win, mirroring the BF16-vs-Q8_0 result above**:
+ranking by mean is bundled dflash-kquant > Q4_K_M > Q8_0 > BF16, and by
+median Q4_K_M > Q8_0 ≈ bundled > BF16 — all four are within ~11% of each
+other by mean, much tighter than the 62% base-quant gap. The bundled
+drafter has a mild edge and the added benefit of shipping with the base
+repo already (no separate `incoai/...-DFlash2-GGUF` download needed), but
+Q4_K_M is closely competitive and less noisy (no outlier file). BF16 is the
+weakest of the four here, consistent with "smaller drafter forward pass at
+the same accept rate wins."
+
 ## Summary / recommendations
 
+- **muse-glimmer-30b**: DFlash2 BF16 (n_max=15) and the bundled dflash-kquant
+  draft (n_max=3) are a wash on decode speed (~14.35-14.37 tok/s mean) despite
+  a big accept-rate gap — see the 2026-09-08 section above. DFlash2 **Q8_0**
+  beats both (~15.35 tok/s, +6.8% over BF16 at the same accept rate) — if using
+  the standalone incoai checkpoint, prefer Q8_0 over BF16. But the far bigger
+  lever is the **base model quant**: `UD-Q4_K_XL` beats `UD-Q8_K_XL` by ~62%
+  mean decode (24.81 vs 15.35 tok/s) at the same accept rate, for ~0.2%
+  benchmark degradation per Meta's model card — worth defaulting to
+  `UD-Q4_K_XL` unless the extra quality of Q8 is specifically wanted.
 - **qwen36-27b**: bump `num_speculative_tokens` from 3 → **4** on the nvfp4 profile for a modest (~5%) throughput gain. Avoid the fp8 profile — it's slower and showed unexplained request failures under load at N=4/N=6.
 - **qwen36-35b-a3b**: leave `num_speculative_tokens` at **3** on both profiles — it's already the peak for this model, and prefer the **nvfp4** profile over fp8 (roughly 1.5-1.6x the throughput at matching N).
 - General pattern: acceptance rate decays with each added speculative position (compounding error from reusing the same MTP layer autoregressively, as vLLM's own startup warning notes), and past N=3-4 the extra drafting compute costs more than the added accepted tokens return. The 35B-A3B (MoE) model peaks earlier and drops off harder than the 27B dense model, likely because its per-step compute is cheaper, so the relative overhead of wasted draft passes is larger.

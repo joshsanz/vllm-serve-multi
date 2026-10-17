@@ -49,7 +49,7 @@ GPU memory to spare for two at once.
 | `qwen38-27b/` | `Qwen/Qwen3.8-27B-FP8` | dense hybrid attention (Gated DeltaNet + full attention); vLLM auto-manages the hybrid KV cache, no extra flags needed |
 | `kat-coder-v25-dev-awq/` | `cyankiwi/KAT-Coder-V2.5-Dev-AWQ-INT4` | fine-tune of Qwen3.6-35B-A3B, INT4 compressed-tensors quant, no speculative decoding |
 | `nemotron-35-lightning-dspark/` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` | hybrid Mamba-2+MoE+Attention, DSpark speculative decoding, NVIDIA's DGX Spark recipe |
-| `systemone/` | `vllm-sr/d3` + `vllm-sr/Vela-2.0-9B` | System One decision models (choice/yes-no/score answers, not chat) served by one `vllm-srun` process on :8000 via `POST /v1/decisions`; locally built image, upstream has no arm64+CUDA one; see its header for the page-cache gotcha |
+| `systemone/` | `vllm-sr/d3` + `LiquidAI/LFM2.5-24B-A2B` (BF16) | two containers: d3 decision model (choice/yes-no/score answers, not chat) in a `vllm-srun` process on :8000 via `POST /v1/decisions` (locally built image, upstream has no arm64+CUDA one); LFM2.5 hybrid conv/attention MoE as a regular chat LLM on :8001 (`--max-num-seqs 4`, 131072 ctx (native max), util 0.44 for ~320k KV tokens = two full sessions, `qwen3` reasoning + `lfm2` tool parsers; FP8 variant is the fallback if memory gets tight); vLLM v0.31.0; see compose header for the page-cache gotcha |
 
 To iterate on settings, edit the `command:` list and re-run `up -d` —
 compose recreates the container in place instead of requiring a manual
@@ -88,7 +88,7 @@ laguna-s-21/docker-compose.yml         standalone Laguna-S-2.1 stack
 qwen38-27b/docker-compose.yml          standalone Qwen3.8-27B stack (fp8, hybrid attention)
 kat-coder-v25-dev-awq/docker-compose.yml  standalone KAT-Coder-V2.5-Dev-AWQ-INT4 stack
 nemotron-35-lightning-dspark/docker-compose.yml  standalone Nemotron-3.5-Lightning stack (DSpark speculative decoding)
-systemone/{Dockerfile,models.yaml,docker-compose.yml}  d3 + Vela 2.0 decision models (vllm-srun, BF16)
+systemone/{Dockerfile,models.yaml,docker-compose.yml}  d3 decision model (vllm-srun) + LFM2.5-24B-A2B BF16 chat LLM
 MTP_BENCHMARKS.md                      throughput benchmark results across stacks
 nemotron-3-super.sh                    standalone Nemotron 3 Super launcher
 super_v3_reasoning_parser.py           reasoning parser plugin for Nemotron 3

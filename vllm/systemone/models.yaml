@@ -1,7 +1,5 @@
-# Models served by one vllm-srun process. Both are built-in, so revisions are pinned by the runtime.
-# Questions pick the model with the request's "model" field.
+# Models served by the systemone vllm-srun process. d3 is built-in, so its revision is pinned by the runtime.
+# Vela 2.0 9B was dropped to make room for the lfm service (see docker-compose.yml).
 models:
   - model: vllm-sr/d3
-    device: cuda:0
-  - model: vllm-sr/Vela-2.0-9B
     device: cuda:0

@@ -1,5 +1,5 @@
-# System One decision models (vLLM Semantic Router "vllm-srun" runtime): d3 (27B) + Vela 2.0 9B
-# served from one process on :8000.
+# System One: d3 decision model (vLLM Semantic Router "vllm-srun" runtime) on :8000, plus
+# LiquidAI/LFM2.5-24B-A2B as a regular autoregressive chat LLM (stock vLLM, OpenAI API) on :8001.
 #
 #   docker compose up -d --build        # first start downloads ~70 GB of weights
 #   curl localhost:8000/v1/models
@@ -7,14 +7,17 @@
 #
 # Upstream has no arm64+CUDA image, so ./Dockerfile layers the runtime on the vLLM image
 # (aarch64 CUDA torch). Its CUDA path is upstream-"unvalidated". Edit models.yaml to swap
-# models (e.g. vllm-sr/Vela-2.0-4B, vllm-sr/d3-flash). Memory: d3 ~62-65 GiB + Vela 9B
-# ~32 GB of the ~121 GiB pool; stop other stacks first (one stack at a time).
+# models (e.g. vllm-sr/Vela-2.0-9B, vllm-sr/d3-flash). Memory (~121 GiB pool): d3 ~62-65 GiB +
+# lfm BF16 ~45 GiB weights + ~5 GiB KV/activations. Tight; if lfm fails to fit, switch it to
+# LiquidAI/LFM2.5-24B-A2B-FP8 (~25 GiB). Stop other stacks first (one stack at a time).
+#   curl localhost:8001/v1/chat/completions -H 'content-type: application/json' \
+#     -d '{"model":"lfm2.5-24b-a2b","messages":[{"role":"user","content":"hi"}]}'
 #
 # Gotcha: on this unified-memory box the runtime's placement check counts page cache as used,
 # so right after the weights download Vela 9B fails with "4.3 GiB free". Drop the cache and
 # restart (the load itself refills it, so drop it during startup too):
 #   sudo sh -c 'echo 1 > /proc/sys/vm/drop_caches'; docker compose restart
-# Measured warm: d3 ~0.34 s, Vela 9B ~0.14 s for a 2-question request; ~78 GiB in use total.
+# (Applied to Vela 9B, now removed from models.yaml; start d3 before lfm so the placement check sees free memory.)
 x-logging: &logging
   driver: json-file
   options: {max-size: "10m", max-file: "3"}
@@ -46,3 +49,49 @@ services:
       - --models=/etc/vllm-srun/models.yaml
       - --host=0.0.0.0
       - --port=8000
+
+  lfm:
+    <<: *gpu
+    image: vllm/vllm-openai:v0.31.0-ubuntu2404
+    container_name: systemone-lfm
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      - systemone
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    shm_size: "16gb"
+    ports:
+      - "8001:8000"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ~/ext/cache/vllm:/root/.cache/vllm
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      VLLM_NO_USAGE_STATS: "1"
+      PYTHONUNBUFFERED: "1"
+    command:
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --model
+      - LiquidAI/LFM2.5-24B-A2B
+      - --served-model-name
+      - lfm2.5-24b-a2b
+      - --max-model-len
+      - "131072"
+      - --gpu-memory-utilization
+      - "0.44"
+      - --max-num-seqs
+      - "4"
+      - --enable-prefix-caching
+      - --async-scheduling
+      # Always-thinking model: qwen3 parser splits <think> into reasoning_content; lfm2 parses its
+      # pythonic <|tool_call_start|>[fn(...)]<|tool_call_end|> calls (vLLM LFM2.5 recipe).
+      - --reasoning-parser
+      - qwen3
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - lfm2
