@@ -72,6 +72,7 @@ this is adapted for another box, that line needs updating to match.
 ```
 inkling-small.sh            Inkling-Small-GGUF (UD-IQ3_XXS), auto speculative (resolves to ngram-mod, see MTP_BENCHMARKS.md)
 qwen38-flash-next.sh        Qwen3.8-Flash-Next-GGUF (UD-IQ4_XS), mtp speculative decoding via sidecar head passed through to llama-server as `--model-draft ... --spec-type draft-mtp` (studio's own `--speculative-type mtp` can't find the split-out head); 1.65x decode, ~72% accept (see MTP_BENCHMARKS.md, 2026-09-01)
+muse-glimmer-30b.sh         Muse-Glimmer-30B-GGUF (UD-Q4_K_XL — ~62% faster decode than UD-Q8_K_XL at ~0.2% quality cost per Meta's card, see MTP_BENCHMARKS.md), DFlash2 speculative decoding via incoai/Muse-Glimmer-30B-DFlash2-GGUF (Q4_K_M draft, picked from a 4-way drafter sweep — all within ~11% of each other), passed through as `--model-draft ... --spec-type draft-dflash` for the same reason as the Flash-Next MTP head; confirmed working 2026-09-08 (previously hit a tensor-count mismatch, now fixed upstream — see the script's header comment)
 archive/                    launcher recipes for models no longer cached on the box
 systemd/unsloth@.service    templated systemd user unit for durable, tmux-free launches
 ```
