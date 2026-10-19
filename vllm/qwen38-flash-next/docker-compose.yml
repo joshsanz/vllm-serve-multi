@@ -103,7 +103,7 @@ services:
       - --max-num-batched-tokens
       - "4096"
       - --speculative-config
-      - '{"method":"mtp","num_speculative_tokens":4}'
+      - '{"method":"mtp","num_speculative_tokens":3}'
       - --gdn-decode-kernel
       - b12x
       - --linear-backend
