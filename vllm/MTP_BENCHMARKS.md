@@ -177,6 +177,55 @@ comparison above.
   `qwen36-27b` (16.40) > `qwen38-27b`/unsloth (15.36, 2026-08-21) >
   `ling-30-flash-int4` (15.08) > `muse-glimmer-30b` (14.35).
 
+## Concurrency-1 benchmark: qwen38-flash-next on vLLM, NVIDIA FP4 checkpoint + MTP (recorded 2026-10-19)
+
+`vllm/qwen38-flash-next/` serves `nvidia/Qwen3.8-Flash-Next-FP4-Local`
+(NVFP4/MXFP8 QAD checkpoint) through the community
+`eugr/spark-vllm-b12x` image, with `mtp` speculative decoding at
+`num_speculative_tokens=4`, fp8 KV cache, 262144 ctx, `--max-num-seqs 4`.
+Startup: model load 70.3 GiB (155 s), 18.0 GiB KV cache (958,586 tokens),
+engine init 671 s on a cold cache. vLLM warns that no KV cache group is
+identified as the MTP draft's; drafting still works.
+
+Same 6-file suite as above via `bench/bench_openai_client_timed.py`
+(client-timed from SSE chunks; raw output
+`bench/results/qwen38-flash-next-fp4-vllm.log`).
+
+| File | Prompt tok | TTFT s | Decode tok/s | Output tok |
+|---|---|---|---|---|
+| server-http.cpp | 9,324 | 4.67 | 32.46 | 1500 (cap) |
+| llama-chat.cpp | 11,990 | 5.37 | 43.45 | 569 (stop) |
+| llama-memory-recurrent.cpp | 13,598 | 6.35 | 33.75 | 1500 (cap) |
+| server-common.cpp | 20,097 | 9.31 | 30.14 | 1500 (cap) |
+| server-task.cpp | 16,057 | 7.30 | 31.64 | 1500 (cap) |
+| llama-quant.cpp | 19,974 | 9.20 | 37.12 | 1500 (cap) |
+| **Mean** | | | **34.76** | |
+| **Range** | | | 30.14-43.45 | |
+
+**vs. the GGUF recipe (2026-09-01, `unsloth/qwen38-flash-next.sh`, MTP N=2):**
+
+| | Decode tok/s (mean) | Prefill tok/s (mean) |
+|---|---|---|
+| unsloth GGUF UD-IQ4_XS + MTP | 38.34 | 520.9 |
+| **vLLM NVIDIA FP4 + MTP (N=4)** | **34.76** | **~2,150** (prompt / TTFT) |
+
+**Notes:**
+
+- Prefill is ~4x faster on vLLM; decode is ~9% slower than the GGUF recipe.
+- Caveats: prompt token counts differ (different tokenizers/context
+  handling, so not the same prompts token-for-token), and 5 of 6 requests
+  hit the 1500-token cap, so this is a snapshot of early decode only.
+  Prefill is derived as prompt tokens / TTFT, which includes scheduling
+  overhead.
+- MTP acceptance is weak at N=4: vLLM's `SpecDecoding` log lines during the
+  run showed mean acceptance length 2.27-2.69, per-position acceptance
+  ~0.62-0.74 / 0.36-0.45 / 0.18-0.32 / 0.11-0.19, average draft acceptance
+  32-42% (last three 10 s windows only, not a full-run aggregate). Positions
+  3-4 mostly waste draft compute, so trying N=2 or 3 is the obvious next
+  experiment, as on the qwen36 stacks below.
+- Needs the whole memory pool (stop every other stack first); the GGUF
+  recipe is the lighter-weight option.
+
 ## Concurrency-1 benchmark: qwen38-flash-next WITH MTP (recorded 2026-09-01)
 
 Follow-up to the 2026-08-27 baseline below. Engine-side MTP support for this

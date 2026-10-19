@@ -49,6 +49,7 @@ GPU memory to spare for two at once.
 | `qwen38-27b/` | `Qwen/Qwen3.8-27B-FP8` | dense hybrid attention (Gated DeltaNet + full attention); vLLM auto-manages the hybrid KV cache, no extra flags needed |
 | `kat-coder-v25-dev-awq/` | `cyankiwi/KAT-Coder-V2.5-Dev-AWQ-INT4` | fine-tune of Qwen3.6-35B-A3B, INT4 compressed-tensors quant, no speculative decoding |
 | `nemotron-35-lightning-dspark/` | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4` | hybrid Mamba-2+MoE+Attention, DSpark speculative decoding, NVIDIA's DGX Spark recipe |
+| `qwen38-flash-next/` | `nvidia/Qwen3.8-Flash-Next-FP4-Local` | NVIDIA QAD NVFP4/MXFP8 (125B total / 6B active), community `eugr/spark-vllm-b12x` arm64 image (upstream vLLM lacks the new NVFP4 scale format), MTP N=4, 262144 ctx; ~96 GB download, needs the whole memory pool so stop every other stack first; GGUF alternative in `../unsloth/qwen38-flash-next.sh` |
 | `systemone/` | `vllm-sr/d3` + `LiquidAI/LFM2.5-24B-A2B` (BF16) | two containers: d3 decision model (choice/yes-no/score answers, not chat) in a `vllm-srun` process on :8000 via `POST /v1/decisions` (locally built image, upstream has no arm64+CUDA one); LFM2.5 hybrid conv/attention MoE as a regular chat LLM on :8001 (`--max-num-seqs 4`, 131072 ctx (native max), util 0.44 for ~320k KV tokens = two full sessions, `qwen3` reasoning + `lfm2` tool parsers; FP8 variant is the fallback if memory gets tight); vLLM v0.31.0; see compose header for the page-cache gotcha |
 
 To iterate on settings, edit the `command:` list and re-run `up -d` —
