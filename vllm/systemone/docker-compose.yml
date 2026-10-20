@@ -1,16 +1,16 @@
-# System One: d3 decision model (vLLM Semantic Router "vllm-srun" runtime) on :8000, plus
-# LiquidAI/LFM2.5-24B-A2B as a regular autoregressive chat LLM (stock vLLM, OpenAI API) on :8001.
+# System One: d3 decision model (vLLM Semantic Router "vllm-srun" runtime) on :8001, plus
+# LiquidAI/LFM2.5-24B-A2B as a regular autoregressive chat LLM (stock vLLM, OpenAI API) on :8000.
 #
 #   docker compose up -d --build        # first start downloads ~70 GB of weights
-#   curl localhost:8000/v1/models
-#   curl localhost:8000/v1/decisions -H 'content-type: application/json' -d '{"model":"vllm-sr/d3", ...}'
+#   curl localhost:8001/v1/models
+#   curl localhost:8001/v1/decisions -H 'content-type: application/json' -d '{"model":"vllm-sr/d3", ...}'
 #
 # Upstream has no arm64+CUDA image, so ./Dockerfile layers the runtime on the vLLM image
 # (aarch64 CUDA torch). Its CUDA path is upstream-"unvalidated". Edit models.yaml to swap
 # models (e.g. vllm-sr/Vela-2.0-9B, vllm-sr/d3-flash). Memory (~121 GiB pool): d3 ~62-65 GiB +
 # lfm BF16 ~45 GiB weights + ~5 GiB KV/activations. Tight; if lfm fails to fit, switch it to
 # LiquidAI/LFM2.5-24B-A2B-FP8 (~25 GiB). Stop other stacks first (one stack at a time).
-#   curl localhost:8001/v1/chat/completions -H 'content-type: application/json' \
+#   curl localhost:8000/v1/chat/completions -H 'content-type: application/json' \
 #     -d '{"model":"lfm2.5-24b-a2b","messages":[{"role":"user","content":"hi"}]}'
 #
 # Gotcha: on this unified-memory box the runtime's placement check counts page cache as used,
@@ -38,7 +38,7 @@ services:
     restart: unless-stopped
     logging: *logging
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - ~/.cache/huggingface:/root/.cache/huggingface
       - ./models.yaml:/etc/vllm-srun/models.yaml:ro
@@ -63,7 +63,7 @@ services:
       stack: 67108864
     shm_size: "16gb"
     ports:
-      - "8001:8000"
+      - "8000:8000"
     volumes:
       - ~/.cache/huggingface:/root/.cache/huggingface
       - ~/ext/cache/vllm:/root/.cache/vllm

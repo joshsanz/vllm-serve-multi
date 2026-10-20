@@ -1,5 +1,5 @@
 # Models served by the systemone vllm-srun process. d3 is built-in, so its revision is pinned by the runtime.
 # Vela 2.0 9B was dropped to make room for the lfm service (see docker-compose.yml).
 models:
-  - model: vllm-sr/d3
+  - model: vllm-sr/d3-flash
     device: cuda:0

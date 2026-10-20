@@ -8,8 +8,10 @@
 # flags below are copied from that recipe; the n-gram embedding table (PLE) stays on disk
 # (VLLM_PLE_TABLE_MEMORY=disk), which is what lets it fit alongside the KV cache.
 #
-# The checkpoint nearly fills the ~121 GiB pool: stop every other stack first (including
-# systemone), and drop the page cache before starting (see systemone/docker-compose.yml):
+# At --gpu-memory-utilization 0.7 (351k-token KV cache, one full 262k request) there is room
+# for systemone serving d3-flash alongside (chat on :8000, systemone on :8001). Stop every
+# other stack, and drop the page cache before starting (see systemone/docker-compose.yml);
+# systemone's placement check counts page cache as used, so drop it repeatedly while it loads:
 #   sudo sh -c 'echo 1 > /proc/sys/vm/drop_caches'
 # First start downloads ~96 GB. Replaces the GGUF recipe in ../../unsloth/qwen38-flash-next.sh.
 x-logging: &default-logging
@@ -121,4 +123,4 @@ services:
       - --compilation-config
       - '{"pass_config":{"fuse_act_quant":true}}'
       - --gpu-memory-utilization
-      - "0.8"
+      - "0.7"
