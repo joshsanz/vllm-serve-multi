@@ -21,6 +21,7 @@ which engine directory it lives in.
 | Directory | Model | Notes |
 |---|---|---|
 | `laguna/` | `poolside/Laguna-S-2.1-NVFP4` | **parked** — sglang lacks upstream fixes vLLM already has for this model on SM12x; see `laguna/README.md` for the full root-cause writeup. Serving moved to `../vllm/laguna-s-21/`. |
+| `clover/` | `Diffuspace/Clover-35B-A3B-Preview` (BF16) + `vllm-sr/d3-flash` | Clover block-diffusion LLM (Qwen3.6-35B-A3B base, self-speculative `CLOVER` decoding) as chat on :8000, with the d3-flash decision model (`systemone`, built from `../vllm/systemone/`) on :8001. Clover only serves through unmerged sglang PR #46927, so `clover/Dockerfile` installs the PR over a pinned nightly and unlocks its H200-only Triton kernels for SM12.1 (unvalidated upstream). Uses ~115 GiB of the pool; ~4 concurrent requests. See `clover/docker-compose.yml` for memory tuning. Replaces the LFM2.5 pairing in `vllm/systemone/`. |
 
 Run any stack the same way as vLLM's:
 
