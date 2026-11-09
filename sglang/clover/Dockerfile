@@ -5,7 +5,7 @@
 # install its tree over the image's sglang with --no-deps. Drop this once the PR is merged.
 FROM lmsysorg/sglang:nightly-dev-cu13-20261031-a2cafa56
 
-ARG CLOVER_REF=2243dc6edb416073b60be0765904cabae9eb61cf
+ARG CLOVER_REF=a1eee6c050648c8e6f048329878aa5ca5c92bdc2
 RUN git clone --filter=blob:none https://github.com/sgl-project/sglang /opt/sglang-clover \
  && cd /opt/sglang-clover \
  && git fetch origin refs/pull/46927/head \
@@ -19,3 +19,7 @@ WORKDIR /opt/sglang-clover
 RUN grep -rl 'get_device_capability(.*)\[0\] in (9, 10)' python/sglang/kernels/ops \
  | xargs sed -i 's/\[0\] in (9, 10)/[0] in (9, 10, 12)/' \
  && grep -rn 'in (9, 10, 12)' python/sglang/kernels/ops | wc -l
+
+# Newer PR heads also reject non-9/10 GPUs at launch (config-time SM check); allow 12 there too.
+RUN sed -i 's|get_device_sm() // 10 not in (9, 10)|get_device_sm() // 10 not in (9, 10, 12)|' python/sglang/srt/arg_groups/model_overrides/clover_moe.py \
+ && grep -n 'in (9, 10, 12)' python/sglang/srt/arg_groups/model_overrides/clover_moe.py
