@@ -86,6 +86,10 @@ services:
       - "0.88"
       - --max-running-requests
       - "4"
+      # Model card's max_new_tokens (24576) as the default when a request sets no max_tokens. Merged
+      # over Clover's built-in presence 0.9 / repetition 1.05 defaults, so those stay in effect.
+      - --preferred-sampling-params
+      - '{"max_new_tokens": 24576}'
       # Preview/verify width (must divide the checkpoint's block size of 32). 16 is what the PR
       # validated, and the default 32 doesn't fit the hybrid state cache next to d3-flash.
       - --speculative-num-draft-tokens
