@@ -177,6 +177,49 @@ comparison above.
   `qwen36-27b` (16.40) > `qwen38-27b`/unsloth (15.36, 2026-08-21) >
   `ling-30-flash-int4` (15.08) > `muse-glimmer-30b` (14.35).
 
+## Concurrency-1 benchmark: Clover-35B-A3B on sglang, BF16 (recorded 2026-11-09)
+
+`sglang/clover/` serves `Diffuspace/Clover-35B-A3B-Preview` (BF16, ~66 GB
+weights, ~3B active MoE) through unmerged sglang PR #46927 at head
+`a1eee6c` (Dockerfile patched to allow SM12.1 / GB10), with
+`--speculative-algorithm CLOVER` (self-speculative block drafting verified by
+the same weights, no draft model), draft width 16, `--mem-fraction-static
+0.88`, `--max-running-requests 4`, 131072 ctx. The d3-flash `systemone`
+decision model was co-resident on the GPU. Server defaults: presence penalty
+0.9, repetition penalty 1.05, plus Clover's length / think-end biases.
+
+Same 6-file suite via `bench/bench_openai_client_timed.py` (client-timed from
+SSE chunks, concurrency 1, 1500-token cap). Raw output in
+`bench/results/clover-sglang-a1eee6c.log` (captured stdout; the directory is
+gitignored).
+
+| File | Prompt tok | TTFT s | Decode tok/s | Output tok |
+|---|---|---|---|---|
+| server-http.cpp | 9,282 | 2.39 | 40.97 | 1500 (cap) |
+| llama-chat.cpp | 11,948 | 2.23 | 42.49 | 1500 (cap) |
+| llama-memory-recurrent.cpp | 13,556 | 2.51 | 39.86 | 1500 (cap) |
+| server-common.cpp | 20,055 | 3.86 | 47.47 | 1500 (cap) |
+| server-task.cpp | 16,015 | 2.91 | 38.81 | 1500 (cap) |
+| llama-quant.cpp | 19,932 | 3.84 | 38.68 | 1500 (cap) |
+| **Mean** | | | **41.38** | |
+| **Range** | | | 38.68-47.47 | |
+
+**Notes:**
+
+- Second-fastest concurrency-1 result in this doc: behind `qwen36-35b-a3b`
+  (58.88, but that is **FP8**, roughly half the weight bytes of Clover's
+  BF16 on a bandwidth-bound box), ahead of the `qwen38-flash-next` GGUF
+  (38.34) and vLLM FP4 (35.89) stacks and `kat-coder-v25-dev-awq` (37.06).
+- All six requests hit the 1500-token cap while still in the thinking phase,
+  so this is early-decode speed only. tok/s is comparable; per-answer
+  completion time is not.
+- Only a single run, no baseline for the previous pin (`2243dc6`), so this
+  says nothing about whether the pin bump changed speed. No accept rate:
+  sglang does not expose it over the OpenAI API.
+- The PR's SM12 kernel gating is bypassed by a Dockerfile `sed` and is
+  unvalidated upstream; PR-reported ~450 tok/s was on an H200 and is not
+  comparable to this box.
+
 ## Concurrency-1 benchmark: qwen38-flash-next on vLLM, NVIDIA FP4 checkpoint + MTP (recorded 2026-10-19)
 
 `vllm/qwen38-flash-next/` serves `nvidia/Qwen3.8-Flash-Next-FP4-Local`
