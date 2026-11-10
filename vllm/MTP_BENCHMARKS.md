@@ -744,6 +744,30 @@ Q4_K_M is closely competitive and less noisy (no outlier file). BF16 is the
 weakest of the four here, consistent with "smaller drafter forward pass at
 the same accept rate wins."
 
+## ripple-65b NVFP4 — DFlash2 on vs off, draft length 16 vs 32 (recorded 2026-11-10)
+
+`sglang/ripple/` (sglang 0.5.19, Ricursive's Spark recipe: NVFP4 MLP / BF16
+attention target, BF16 `Ripple-65B-Preview-DFlash2` drafter, `--max-running-requests 1`,
+context 131072). Same concurrency-1 suite (`bench/bench_openai_client_timed.py`).
+Raw output in `bench/results/ripple-65b-nvfp4-baseline.log`,
+`ripple-65b-nvfp4-dflash2.log` (32 draft tokens) and `ripple-65b-nvfp4-dflash2-n16.log`.
+
+| File | prompt tok | baseline | DFlash2 n=32 | DFlash2 n=16 |
+|---|---|---|---|---|
+| server-http.cpp | 8444 | 3.87 | 12.25 | 12.25 |
+| llama-chat.cpp | 11116 | 3.86 | 12.06 | 11.53 |
+| llama-memory-recurrent.cpp | 12343 | 3.85 | 9.76 | 10.98 |
+| server-common.cpp | 18193 | 3.83 | 11.23 | 11.21 |
+| server-task.cpp | 14306 | 3.83 | 10.73 | 10.53 |
+| llama-quant.cpp | 18498 | 3.82 | 11.71 | 11.89 |
+| **Mean** | | **3.84** | **11.29** | **11.40** |
+| Median | | 3.84 | 11.47 | 11.37 |
+
+- DFlash2 is ~2.9-3.0x faster decode than no drafter; TTFT is unchanged (15-33 s for 8-18k prompt tokens).
+- n=16 vs n=32 is a tie (+1%, inside run-to-run spread). Server-log accept length looked higher at 16 (~4.0-4.5 vs ~3.2-3.9; last few decode batches only, not averaged). Defaulted to 16: it matches the drafter's block size and the model card's SGLang snippet. The 32 comes from Ricursive's spark.py.
+- Baseline is very steady (3.82-3.87); DFlash2 varies by file. Every baseline run hit the 1500-token cap, while 1-2 DFlash2 runs stopped early, so output text differs between configs.
+- The drafter's card validated it against the BF16 RL-step-500 target on 8xH100, not NVFP4 on GB10, so the low accept length (~4 of 16-32) may reflect that mismatch rather than quantization alone. Not investigated.
+
 ## Summary / recommendations
 
 - **muse-glimmer-30b**: DFlash2 BF16 (n_max=15) and the bundled dflash-kquant
@@ -755,6 +779,7 @@ the same accept rate wins."
   mean decode (24.81 vs 15.35 tok/s) at the same accept rate, for ~0.2%
   benchmark degradation per Meta's model card — worth defaulting to
   `UD-Q4_K_XL` unless the extra quality of Q8 is specifically wanted.
+- **ripple-65b (NVFP4)**: DFlash2 gives ~2.9x decode (11.4 vs 3.84 tok/s mean); draft length 16 and 32 tie, default 16 — see the 2026-11-10 section above.
 - **qwen36-27b**: bump `num_speculative_tokens` from 3 → **4** on the nvfp4 profile for a modest (~5%) throughput gain. Avoid the fp8 profile — it's slower and showed unexplained request failures under load at N=4/N=6.
 - **qwen36-35b-a3b**: leave `num_speculative_tokens` at **3** on both profiles — it's already the peak for this model, and prefer the **nvfp4** profile over fp8 (roughly 1.5-1.6x the throughput at matching N).
 - General pattern: acceptance rate decays with each added speculative position (compounding error from reusing the same MTP layer autoregressively, as vLLM's own startup warning notes), and past N=3-4 the extra drafting compute costs more than the added accepted tokens return. The 35B-A3B (MoE) model peaks earlier and drops off harder than the 27B dense model, likely because its per-step compute is cheaper, so the relative overhead of wasted draft passes is larger.

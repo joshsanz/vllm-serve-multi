@@ -1,0 +1,65 @@
+# Ripple-65B-Preview (dense, NVFP4 MLP / BF16 attention) on :8000, plus the d3-flash decision model
+# (vllm/systemone) on :8001. Replaces sglang/clover as the chat model.
+#
+#   docker compose up -d --build                     # DFlash2 speculative decoding on (default)
+#   RIPPLE_SPEC=0 docker compose up -d --build       # baseline, no drafter
+#   RIPPLE_DRAFT_TOKENS=32 docker compose up -d      # draft length (default 16; 32 benchmarked the same)
+#   curl localhost:8000/v1/chat/completions -H 'content-type: application/json' \
+#     -d '{"model":"ripple-65b","messages":[{"role":"user","content":"hi"}]}'
+#
+# Ricursive's DGX Spark recipe is single-request only (--max-running-requests 1, CUDA graph bs 1,
+# no radix cache), so this stack is a concurrency-1 server. Stop every other stack first (sglang/clover too).
+# If d3-flash is already running (e.g. left over from sglang/clover), start only this service, or
+# compose collides on the `systemone` container name:  docker compose up -d --build --no-deps ripple
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "10m", max-file: "3"}
+
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - {driver: nvidia, count: all, capabilities: [gpu]}
+
+services:
+  systemone:
+    <<: *gpu
+    build: ../../vllm/systemone
+    image: systemone:local
+    container_name: systemone
+    restart: unless-stopped
+    logging: *logging
+    ports:
+      - "8001:8000"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ../../vllm/systemone/models.yaml:/etc/vllm-srun/models.yaml:ro
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+    command:
+      - serve
+      - --models=/etc/vllm-srun/models.yaml
+      - --host=0.0.0.0
+      - --port=8000
+
+  ripple:
+    <<: *gpu
+    build: .
+    image: sglang-ripple:local
+    container_name: ripple
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      - systemone
+    ipc: host
+    shm_size: "16gb"
+    ports:
+      - "8000:30000"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      PYTHONUNBUFFERED: "1"
+      RIPPLE_SPEC: ${RIPPLE_SPEC:-1}
+      RIPPLE_DRAFT_TOKENS: ${RIPPLE_DRAFT_TOKENS:-16}
