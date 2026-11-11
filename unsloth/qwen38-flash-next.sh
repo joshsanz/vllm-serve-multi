@@ -1,7 +1,8 @@
 #!/bin/bash
 # Qwen3.8-Flash-Next — 177B params / 6B active + 51B n-gram embed / 4B MTP.
-# UD-IQ4_XS (~93.7 GB): fits 121 GB
-# unified with a 256k KV cache; UD-Q4_K_XL (upstream's pick) does not.
+# UD-IQ2_XS (~75.8 GB, Unsloth Dynamic V3.1 re-upload of 2026-11-04): leaves room in the 121 GB
+# unified pool for a 256k KV cache, the MTP head and d3-flash (systemone, :8001) running alongside.
+# Previously UD-IQ4_XS (~93.7 GB); UD-Q4_K_XL (upstream's pick) does not fit.
 #
 # MTP spec decoding, per unsloth.ai/docs/models/qwen3.8-next:
 #   llama-server -hf ...:<quant> -md <repo>/MTP/mtp-...-shared-Q8_0.gguf \
@@ -30,7 +31,7 @@ fi
 echo "qwen38-flash-next: MTP draft head -> $DRAFT_HEAD" >&2
 
 LLAMA_ARG_SPEC_DRAFT_N_MAX=3 unsloth run \
-    --model unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ4_XS \
+    --model unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ2_XS \
     --parallel 4 \
     -c 262144 \
     --cache-type-k f16 --cache-type-v f16 \
