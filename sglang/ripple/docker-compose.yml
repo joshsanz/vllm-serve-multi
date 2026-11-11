@@ -7,8 +7,9 @@
 #   curl localhost:8000/v1/chat/completions -H 'content-type: application/json' \
 #     -d '{"model":"ripple-65b","messages":[{"role":"user","content":"hi"}]}'
 #
-# Ricursive's DGX Spark recipe is single-request only (--max-running-requests 1, CUDA graph bs 1,
-# no radix cache), so this stack is a concurrency-1 server. Stop every other stack first (sglang/clover too).
+# Follows Ricursive's 2789217b DGX Spark bundle: up to 4 concurrent requests, prefix cache, NON-deterministic
+# inference by default (RIPPLE_DETERMINISTIC=1 restores Ricursive's default; ~11% slower decode), triton attention, combined Spark kernels, chain decoding (RIPPLE_DECODING=tree is experimental).
+# RIPPLE_MAX_BATCH=1 RIPPLE_PREFIX_CACHE=0 reproduces the old concurrency-1 setup. Stop every other stack first.
 # If d3-flash is already running (e.g. left over from sglang/clover), start only this service, or
 # compose collides on the `systemone` container name:  docker compose up -d --build --no-deps ripple
 x-logging: &logging
@@ -63,3 +64,8 @@ services:
       PYTHONUNBUFFERED: "1"
       RIPPLE_SPEC: ${RIPPLE_SPEC:-1}
       RIPPLE_DRAFT_TOKENS: ${RIPPLE_DRAFT_TOKENS:-16}
+      RIPPLE_DECODING: ${RIPPLE_DECODING:-chain}
+      RIPPLE_MAX_BATCH: ${RIPPLE_MAX_BATCH:-4}
+      RIPPLE_PREFIX_CACHE: ${RIPPLE_PREFIX_CACHE:-1}
+      RIPPLE_DETERMINISTIC: ${RIPPLE_DETERMINISTIC:-0}
+      RIPPLE_KERNELS: ${RIPPLE_KERNELS:-combined}

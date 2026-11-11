@@ -1,4 +1,7 @@
-"""Ripple's chat format for SGLang: reasoning parser, tool-call parser and tokenizer check.
+"""Ripple reasoning/tool parsers and tokenizer validation for SGLang.
+
+`register()` installs parsers matching chat_template.jinja, preserving round-trip
+whitespace, and checks loaded tokenizers against the checkpoint's tokenizer.json.
 """
 
 import json
@@ -115,7 +118,7 @@ def _reasoning_detector_class():
 
 
 def _tool_detector_class():
-    from sglang.srt.function_call.core_types import StructureInfo
+    from sglang.srt.function_call.core_types import StructureInfo, ToolCallItem
     from sglang.srt.function_call.hermes_detector import HermesDetector
 
     class RippleToolDetector(HermesDetector):
@@ -126,6 +129,21 @@ def _tool_detector_class():
             super().__init__()
             self._held_newline = ""
             self._in_calls = False
+            # Hermes can leave whole calls buffered when one speculative delta spans
+            # multiple calls. Reconcile the full output with emitted deltas at finish.
+            self._seen = ""
+            self._emitted = {}
+
+        def _record(self, calls):
+            for call in calls:
+                emitted = self._emitted.setdefault(call.tool_index, ["", ""])
+                emitted[0] += call.name or ""
+                emitted[1] += call.parameters or ""
+                # SGLang's serving layer also flushes arguments after finish(). Keep
+                # its accounting current so it cannot send the same suffix twice.
+                while len(self.streamed_args_for_tool) <= call.tool_index:
+                    self.streamed_args_for_tool.append("")
+                self.streamed_args_for_tool[call.tool_index] = emitted[1]
 
         def detect_and_parse(self, text, tools):
             res = super().detect_and_parse(text, tools)
@@ -135,7 +153,9 @@ def _tool_detector_class():
             return res
 
         def parse_streaming_increment(self, new_text, tools):
+            self._seen += new_text
             res = super().parse_streaming_increment(new_text, tools)
+            self._record(res.calls)
             if self._in_calls:  # text after the first call is dropped, as in detect_and_parse
                 res.normal_text = ""
                 return res
@@ -154,6 +174,19 @@ def _tool_detector_class():
 
         def finish(self, tools):
             res = super().finish(tools)
+            self._record(res.calls)
+            if self.bot_token in self._seen:
+                for i, call in enumerate(self.detect_and_parse(self._seen, tools).calls):
+                    name, args = self._emitted.get(i, ["", ""])
+                    want = call.parameters or ""
+                    if want.startswith(args):
+                        suffix = want[len(args):]
+                        if suffix or not name:
+                            item = ToolCallItem(
+                                tool_index=i, name=None if name else call.name, parameters=suffix,
+                            )
+                            res.calls.append(item)
+                            self._record([item])
             if self._in_calls:
                 res.normal_text = ""
             elif self._held_newline:

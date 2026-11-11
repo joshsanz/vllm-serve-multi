@@ -768,6 +768,29 @@ Raw output in `bench/results/ripple-65b-nvfp4-baseline.log`,
 - Baseline is very steady (3.82-3.87); DFlash2 varies by file. Every baseline run hit the 1500-token cap, while 1-2 DFlash2 runs stopped early, so output text differs between configs.
 - The drafter's card validated it against the BF16 RL-step-500 target on 8xH100, not NVFP4 on GB10, so the low accept length (~4 of 16-32) may reflect that mismatch rather than quantization alone. Not investigated.
 
+## ripple-65b NVFP4 — re-run on Ricursive bundle 2789217b, DFlash2 n=16 (recorded 2026-11-11)
+
+Same suite and hardware, after re-vendoring `inference/local/` at NVFP4 repo commit `2789217b`
+(`sglang/ripple/` now uses spark.py's `build_args`: batch 4, prefix cache, deterministic inference,
+triton attention, `combined` kernels, chain decoding, 16 draft tokens). Raw output in
+`bench/results/ripple-65b-nvfp4-dflash2-n16-2789217b.log`.
+
+| File | prompt tok | old n=16 (11-10) | new n=16 |
+|---|---|---|---|
+| server-http.cpp | 8444 | 12.25 | 12.05 |
+| llama-chat.cpp | 11116 | 11.53 | 10.33 (stopped at 253 tok) |
+| llama-memory-recurrent.cpp | 12343 | 10.98 | 9.54 |
+| server-common.cpp | 18193 | 11.21 | 9.30 |
+| server-task.cpp | 14306 | 10.53 | 8.02 |
+| llama-quant.cpp | 18498 | 11.89 | 10.78 |
+| **Mean** | | **11.40** | **10.00** |
+| Median | | 11.37 | 9.94 |
+
+- The new bundle is ~12% slower at concurrency 1 (10.00 vs 11.40 mean), and TTFT is 3-4 s higher (18.7-35.7 s vs 14.6-33 s). The gap grows with prompt length, which points at the new defaults rather than the drafter. Not isolated: candidates are deterministic inference, triton instead of flashinfer attention, and the batch-4 CUDA graphs. Each is one env toggle (`RIPPLE_DETERMINISTIC=0`, `RIPPLE_MAX_BATCH=1`, `RIPPLE_KERNELS=stock`); attention backend has no toggle yet.
+- **Isolation runs (2026-11-11, same suite, n=16)**: `RIPPLE_DETERMINISTIC=0` -> **11.22** mean (median 11.45; TTFT 12-29 s), i.e. back to the old 11.40 within noise and TTFT slightly better than before. `RIPPLE_MAX_BATCH=1` (deterministic still on) -> 10.43 mean, TTFT unchanged at 20-36 s, so batch-4 graphs are at most a small factor. Deterministic inference is the main cost (~11% decode, ~6-7 s TTFT on long prompts). Raw logs: `ripple-65b-nvfp4-dflash2-n16-nondeterministic.log`, `...-batch1.log`. Single run each; llama-chat.cpp stopped early at different lengths (509 / 227 tokens), so per-file numbers are noisy.
+- **Decision**: `sglang/ripple` now defaults to `RIPPLE_DETERMINISTIC=0`. Reproducibility check (temperature 0, 400 tokens): off gives identical output for sequential repeats but 7/8 concurrent-vs-solo outputs diverge (early, near-tie flips) and warm-vs-cold prefix-cache turns differ; on gives 8/8 identical concurrent outputs. Single-chat, temperature-1 use makes this moot.
+- The new bundle's benefits (4 concurrent requests, prefix cache for multi-turn, tool-call streaming fixes) are not exercised by this suite.
+
 ## Summary / recommendations
 
 - **muse-glimmer-30b**: DFlash2 BF16 (n_max=15) and the bundled dflash-kquant
@@ -779,7 +802,7 @@ Raw output in `bench/results/ripple-65b-nvfp4-baseline.log`,
   mean decode (24.81 vs 15.35 tok/s) at the same accept rate, for ~0.2%
   benchmark degradation per Meta's model card — worth defaulting to
   `UD-Q4_K_XL` unless the extra quality of Q8 is specifically wanted.
-- **ripple-65b (NVFP4)**: DFlash2 gives ~2.9x decode (11.4 vs 3.84 tok/s mean); draft length 16 and 32 tie, default 16 — see the 2026-11-10 section above.
+- **ripple-65b (NVFP4)**: DFlash2 gives ~2.9x decode (11.4 vs 3.84 tok/s mean); draft length 16 and 32 tie, default 16 — see the 2026-11-10 section above. On bundle 2789217b defaults it drops to 10.0 tok/s at concurrency 1 (2026-11-11 section).
 - **qwen36-27b**: bump `num_speculative_tokens` from 3 → **4** on the nvfp4 profile for a modest (~5%) throughput gain. Avoid the fp8 profile — it's slower and showed unexplained request failures under load at N=4/N=6.
 - **qwen36-35b-a3b**: leave `num_speculative_tokens` at **3** on both profiles — it's already the peak for this model, and prefer the **nvfp4** profile over fp8 (roughly 1.5-1.6x the throughput at matching N).
 - General pattern: acceptance rate decays with each added speculative position (compounding error from reusing the same MTP layer autoregressively, as vLLM's own startup warning notes), and past N=3-4 the extra drafting compute costs more than the added accepted tokens return. The 35B-A3B (MoE) model peaks earlier and drops off harder than the 27B dense model, likely because its per-step compute is cheaper, so the relative overhead of wasted draft passes is larger.

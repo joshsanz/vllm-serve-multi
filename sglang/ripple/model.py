@@ -49,9 +49,12 @@ class RicursiveMLP(nn.Module):
         activation_clamp: Optional[float] = None,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
+        spark_kernels: str = "stock",
     ) -> None:
         super().__init__()
         self.activation_clamp = activation_clamp
+        self.fused_fp4 = spark_kernels in ("fused", "combined", "ported")
+        self.chunk_size = 2048  # Bound prefill SwiGLU activations, as in HF PR #1.
         self.gate_up_proj = MergedColumnParallelLinear(
             hidden_size,
             [intermediate_size] * 2,
@@ -67,9 +70,25 @@ class RicursiveMLP(nn.Module):
             prefix=add_prefix("down_proj", prefix),
         )
         self.act_fn = SiluAndMul()
+        if self.fused_fp4:
+            method = self.down_proj.quant_method
+            if (get_tensor_model_parallel_world_size() != 1 or activation_clamp is None
+                    or intermediate_size % 512 or getattr(method, "quant_mode", None) != "w4a4"
+                    or getattr(method.quant_config, "is_awq", False)):
+                raise ValueError("Fused Spark MLP requires TP1, clamped NVFP4 W4A4 and no AWQ transform")
+            self.down_proj._accepts_prequantized_fp4 = True  # Native SGLang 0.5.19 hook.
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.shape[0] > self.chunk_size:
+            return torch.cat([self._forward_chunk(c) for c in x.split(self.chunk_size)], dim=0)
+        return self._forward_chunk(x)
+
+    def _forward_chunk(self, x: torch.Tensor) -> torch.Tensor:
         gate_up, _ = self.gate_up_proj(x)
+        if self.fused_fp4:
+            from ripple_kernels import silu_fp4
+            x, _ = self.down_proj(silu_fp4(gate_up, self.activation_clamp, self.down_proj.input_scale_inv))
+            return x
         if self.activation_clamp is not None:
             gate, up = gate_up.chunk(2, dim=-1)
             gate = gate.clamp(max=self.activation_clamp)
@@ -90,6 +109,9 @@ class RicursiveAttention(nn.Module):
     ) -> None:
         super().__init__()
         self.config = config
+        kernels = getattr(config, "ripple_spark_kernels", "stock")
+        self.stream_qg = kernels in ("stream", "combined", "ported")
+        self.fused_attention = kernels == "ported"
         hidden_size = config.hidden_size
         tp_size = get_tensor_model_parallel_world_size()
         self.total_num_heads = config.num_attention_heads
@@ -185,9 +207,22 @@ class RicursiveAttention(nn.Module):
         )
 
     def _apply_qk_norm(self, q: torch.Tensor, k: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        if self.fused_attention:
+            from ripple_kernels import head_norm_
+            return (head_norm_(q, self.q_norm.weight, self.config.rms_norm_eps),
+                    head_norm_(k, self.k_norm.weight, self.config.rms_norm_eps))
         q = self.q_norm.forward_native(q.reshape(-1, self.head_dim)).reshape(-1, self.q_size)
         k = self.k_norm.forward_native(k.reshape(-1, self.head_dim)).reshape(-1, self.kv_size)
         return q, k
+
+    def _qg(self, projection, hidden_states):
+        weight = projection.weight
+        if (self.stream_qg and 1 <= hidden_states.shape[0] <= 128
+                and hidden_states.dtype == weight.dtype == torch.bfloat16
+                and weight.shape == (10240, 5120) and weight.is_contiguous()):
+            from ripple_kernels import stream_qg
+            return stream_qg(hidden_states, weight)
+        return projection(hidden_states)[0]
 
     def forward(
         self,
@@ -203,7 +238,7 @@ class RicursiveAttention(nn.Module):
                 value_residual.to(dtype=hidden_states.dtype), hidden_states, blend
             )
 
-        q, _ = self.q_proj(hidden_states)
+        q = self._qg(self.q_proj, hidden_states)
         k, _ = self.k_proj(hidden_states)
         v, _ = self.v_proj(value_input)
 
@@ -217,9 +252,13 @@ class RicursiveAttention(nn.Module):
 
         # Elementwise sigmoid gate (computed in fp32) on the attention output.
         if self.g_proj is not None:
-            gate, _ = self.g_proj(hidden_states)
-            gate = torch.sigmoid(gate.float()).to(attn_output.dtype)
-            attn_output = attn_output * gate
+            gate = self._qg(self.g_proj, hidden_states)
+            if self.fused_attention:
+                from ripple_kernels import gate_mul_
+                attn_output = gate_mul_(attn_output, gate)
+            else:
+                gate = torch.sigmoid(gate.float()).to(attn_output.dtype)
+                attn_output = attn_output * gate
 
         output, _ = self.o_proj(attn_output)
         return output
@@ -247,6 +286,7 @@ class RicursiveDecoderLayer(nn.Module):
             ),
             quant_config=quant_config,
             prefix=add_prefix("mlp", prefix),
+            spark_kernels=getattr(config, "ripple_spark_kernels", "stock"),
         )
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
@@ -458,12 +498,15 @@ def _patch_draft_attention():
     (--speculative-draft-window-size) truncates every layer, including full attention,
     so the window must cover the draft's training context.
     """
+    from copy import copy
     from sglang.srt.models.dflash import DFlashAttention
     from sglang.srt.server_args import get_global_server_args
 
     init = DFlashAttention.__init__
 
     def __init__(self, config, layer_id, *args, **kwargs):
+        config = copy(config)
+        config.max_position_embeddings = max(config.max_position_embeddings, rotary_cache_length(config))
         init(self, config, layer_id, *args, **kwargs)
         if layer_id in (getattr(config, "no_rope_layers", None) or ()):
             self.rotary_emb = _NoRope()
@@ -530,3 +573,104 @@ def _strict_draft_loading():
 
 
 _strict_draft_loading()
+
+
+def _patch_short_draft_conv():
+    """SGLang 0.5.19 pads past the input length when a final block is shorter than taps.
+
+    Right-padding a short block before the causal convolution leaves its real rows
+    unchanged and lets the stock compiled kernel handle every tap safely.
+    """
+    import torch.nn.functional as F
+    from sglang.srt.models import dflash
+
+    conv = dflash._grouped_conv
+    if getattr(conv, "_ripple_short_block", False):
+        return
+
+    def grouped_conv(hidden_states, delta, base, block_size, num_groups, group_size, taps):
+        rows = hidden_states.shape[0]
+        if rows == 0:
+            return hidden_states
+        if rows < taps:
+            hidden_states = F.pad(hidden_states, (0, 0, 0, taps - rows))
+            delta = F.pad(delta, (0, 0, 0, 0, 0, taps - rows))
+        return conv(hidden_states, delta, base, block_size, num_groups, group_size, taps)[:rows]
+
+    grouped_conv._ripple_short_block = True
+    dflash._grouped_conv = grouped_conv
+
+
+_patch_short_draft_conv()
+
+
+
+def _patch_draft_cache_reserve():
+    """Keep the request-to-KV table wide enough for DFLASH's two-block reserve.
+
+    SGLang 0.5.19 only applies this bound at page_size > 1. At page_size=1,
+    finishing near the context limit can write into the next request's row.
+    Backport the sizing rule and early guard from sgl-project/sglang#33581.
+    """
+    from sglang.srt.mem_cache import allocation_sizing, kv_cache_configurator
+    from sglang.srt.runtime_context import get_spec
+    from sglang.srt.speculative.dflash_info_v2 import DFlashDraftInputV2
+
+    extra_context = kv_cache_configurator.get_req_to_token_extra_context_len
+    if getattr(extra_context, "_ripple_draft_reserve", False):
+        return
+
+    def extra_context_len():
+        extra = extra_context()
+        if get_spec().speculative_algorithm == "DFLASH":
+            extra = max(extra, allocation_sizing.get_alloc_reserve_per_decode()
+                        + allocation_sizing.get_alloc_page_size() - 1)
+        return extra
+
+    prepare = DFlashDraftInputV2.prepare_for_decode
+
+    def prepare_for_decode(self, batch):
+        _, lengths, _ = allocation_sizing.page_aligned_decode_alloc_lens(
+            batch.reqs, reserve=2 * int(get_spec().speculative_num_draft_tokens),
+            page_size=batch.token_to_kv_pool_allocator.page_size,
+        )
+        width = batch.req_to_token_pool.req_to_token.shape[1]
+        if any(length > width for length in lengths):
+            raise ValueError("DFLASH decode reserve exceeds the request-to-KV table width")
+        return prepare(self, batch)
+
+    extra_context_len._ripple_draft_reserve = True
+    kv_cache_configurator.get_req_to_token_extra_context_len = extra_context_len
+    DFlashDraftInputV2.prepare_for_decode = prepare_for_decode
+
+
+_patch_draft_cache_reserve()
+
+
+def _patch_deterministic_prefix_cache():
+    """Reuse prefill KV, not decode-shaped KV, for deterministic continuations.
+
+    SGLang's unified cache supports is_insert=False at completion: it frees only the
+    unprotected suffix and retains the prefix inserted during prefill. Quantized
+    decode/verify KV can otherwise change near-tied logits on the next chat turn.
+    """
+    from functools import wraps
+    from sglang.srt.mem_cache.unified_radix_cache import UnifiedRadixCache
+    from sglang.srt.server_args import get_global_server_args
+
+    original = UnifiedRadixCache.cache_finished_req
+    if getattr(original, "_ripple_prefill_only", False):
+        return
+
+    @wraps(original)
+    def cache_finished_req(self, req, is_insert=True, *, kv_len_to_handle, **kwargs):
+        if (get_global_server_args().enable_deterministic_inference
+                and kv_len_to_handle > len(req.origin_input_ids)):
+            is_insert = False
+        return original(self, req, is_insert, kv_len_to_handle=kv_len_to_handle, **kwargs)
+
+    cache_finished_req._ripple_prefill_only = True
+    UnifiedRadixCache.cache_finished_req = cache_finished_req
+
+
+_patch_deterministic_prefix_cache()
