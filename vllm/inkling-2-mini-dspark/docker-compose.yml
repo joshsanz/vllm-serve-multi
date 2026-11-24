@@ -1,0 +1,65 @@
+# Standalone compose stack for thinkingmachines/Inkling-2-Mini (original
+# release weights, ModelOpt-quantized, ~26 GB) with DSpark speculative
+# decoding. Own directory => own compose project/network namespace.
+#
+# Adapted from the model's base vLLM recipe:
+#   vllm serve thinkingmachines/Inkling-2-Mini --tensor-parallel-size 1 \
+#     --max-model-len 262144 --reasoning-parser inkling \
+#     --speculative-config '{"method":"dspark","num_speculative_tokens":7,
+#                            "draft_sample_method":"probabilistic"}'
+# No separate draft repo: the DSpark module ships with the checkpoint
+# (mtp_config / mtp.safetensors), so the speculative config has no "model".
+# Needs vLLM >= 0.35.0 (not released yet): `nightly` image, per the vLLM recipe.
+#
+# GGUF comparison numbers (recipe since dropped): ../MTP_BENCHMARKS.md.
+# Only one stack at a time: both bind :8000.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-gpu: &default-gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+services:
+  inkling-2-mini-dspark:
+    image: vllm/vllm-openai:nightly
+    container_name: inkling-2-mini-dspark
+    restart: unless-stopped
+    logging: *default-logging
+    <<: *default-gpu
+    ports:
+      - "8000:8000"
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ~/ext/cache/vllm:/root/.cache/vllm
+    environment:
+      HF_TOKEN: ${HF_TOKEN}
+    command:
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --model
+      - thinkingmachines/Inkling-2-Mini
+      - --served-model-name
+      - Inkling-2-Mini
+      - --tensor-parallel-size
+      - "1"
+      - --max-model-len
+      - "262144"
+      - --gpu-memory-utilization
+      - "0.75"
+      - --enable-prefix-caching
+      - --reasoning-parser
+      - inkling
+      - --speculative-config
+      - '{"method":"dspark","num_speculative_tokens":7,"draft_sample_method":"probabilistic"}'

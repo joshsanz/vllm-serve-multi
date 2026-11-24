@@ -819,6 +819,31 @@ triton attention, `combined` kernels, chain decoding, 16 draft tokens). Raw outp
 - **Decision**: `sglang/ripple` now defaults to `RIPPLE_DETERMINISTIC=0`. Reproducibility check (temperature 0, 400 tokens): off gives identical output for sequential repeats but 7/8 concurrent-vs-solo outputs diverge (early, near-tie flips) and warm-vs-cold prefix-cache turns differ; on gives 8/8 identical concurrent outputs. Single-chat, temperature-1 use makes this moot.
 - The new bundle's benefits (4 concurrent requests, prefix cache for multi-turn, tool-call streaming fixes) are not exercised by this suite.
 
+## inkling-2-mini + DSpark — vLLM original weights vs unsloth GGUF Q4_K_XL / Q8_K_XL (recorded 2026-11-24)
+
+Concurrency-1, 6-file agentic suite, DSpark speculative decoding on all three; every run hit the
+1500-token cap. vLLM: `vllm/inkling-2-mini-dspark/` (`vllm/vllm-openai:nightly` = 0.34.0rc1.dev1235,
+the recipe's base config: 7 draft tokens, probabilistic sampling, 262144 ctx, util 0.75; v0.34.0
+release can't load it, `inkling2_loop` unknown to Transformers). GGUF: unsloth
+`unsloth run` (2026.11.11, since removed, Q8_0 drafter, draft depth 2, 262144 ctx). Raw logs: `bench/results/inkling-2-mini-*.log`.
+Prompt token counts differ slightly between vLLM and llama.cpp tokenizers on the same file.
+
+| File | vLLM orig | GGUF Q4_K_XL | GGUF Q8_K_XL |
+|---|---|---|---|
+| server-http.cpp | 58.62 | 41.71 | 35.13 |
+| llama-chat.cpp | 54.58 | 40.08 | 34.03 |
+| llama-memory-recurrent.cpp | 52.27 | 36.57 | 32.05 |
+| server-common.cpp | 56.42 | 37.25 | 32.45 |
+| server-task.cpp | 59.04 | 35.85 | 32.43 |
+| llama-quant.cpp | 46.25 | 35.78 | 28.20 |
+| **Mean decode tok/s** | **54.53** | **37.87** | **32.38** |
+| Median | 55.50 | 36.91 | 32.44 |
+
+- TTFT: vLLM 8.3-11.5 s for 15-31k prompts (26 s at 64k); llama.cpp prefill ~1200-1280 tok/s, i.e. ~12 s at 15k and ~53 s at 64k.
+- Q4_K_XL is ~17% faster than Q8_K_XL (37.87 vs 32.38) at the same accept rate (51-67% vs 56-66%) — a much smaller gap than muse-glimmer's 62% because only 5.4B params are active.
+- vLLM on the original ModelOpt weights is ~44% faster than GGUF Q4_K_XL; vLLM mean accept length ~3.0-3.4 of 8 (per-position 0.70-0.75, 0.47-0.51, 0.29-0.38) from the last three metric windows only.
+- Not like-for-like: different engines, quant formats, draft depth (7 vs 2) and drafter precision. Quality not compared.
+
 ## Summary / recommendations
 
 - **muse-glimmer-30b**: DFlash2 BF16 (n_max=15) and the bundled dflash-kquant
