@@ -177,6 +177,34 @@ comparison above.
   `qwen36-27b` (16.40) > `qwen38-27b`/unsloth (15.36, 2026-08-21) >
   `ling-30-flash-int4` (15.08) > `muse-glimmer-30b` (14.35).
 
+## Concurrency-1 benchmark: qwen38-flash-next on the UD-IQ2_XS quant, Dynamic V3.1 (recorded 2026-11-11)
+
+`unsloth/qwen38-flash-next.sh` after the move from UD-IQ4_XS to `UD-IQ2_XS` (75.8 GB, Unsloth Dynamic
+V3.1 re-upload, HF revision 084c631a; unsloth 2026.11.4) with the same MTP sidecar
+(`mtp-Qwen3.8-Flash-Next-shared-Q8_0`), `--spec-draft-n-max 3` (what the script sets),
+`reasoning_effort: medium`, 256k ctx, 4 slots, mmproj loaded, d3-flash resident alongside.
+Same 6-file `bench_llamacpp_timings.py` methodology, direct to llama-server. Raw output:
+`bench/results/qwen38-flash-next-iq2xs.log`.
+
+| File | Prompt tok | Prefill tok/s | Decode tok/s | Accept% |
+|---|---|---|---|---|
+| server-http.cpp | 9,704 | 879.7 | 46.42 | 62.2% |
+| llama-chat.cpp | 11,948 | 870.3 | 47.28 | 65.5% |
+| llama-memory-recurrent.cpp | 13,505 | 863.9 | 42.15 | 55.5% |
+| server-common.cpp | 21,941 | 842.1 | 46.94 | 64.5% |
+| server-task.cpp | 16,540 | 857.7 | 45.81 | 61.4% |
+| llama-quant.cpp | 20,622 | 843.0 | 48.48 | 67.7% |
+| **Mean** | | **859.5** | **46.18** | **62.8%** |
+
+vs UD-IQ4_XS + MTP (2026-09-01, n_max=2): decode 38.34 -> **46.18 tok/s (+20%)**, prefill 521 -> **860 tok/s (+65%)**,
+accept 72.5% -> 62.8%.
+
+- Caveats: the quant is smaller (75.8 vs 93.7 GB), so faster decode/prefill is expected. n_max is 3 here vs 2 then, which on its own lowers accept%
+  (compounding error per position), so the accept drop is not attributable to the quant. Prompt sizes also differ (the llama.cpp source files
+  changed since September: e.g. server-http.cpp 9.7k vs 8.3k tokens). Single run; a different llama.cpp build (the unsloth prebuilt was
+  26 days behind) and unsloth version too. Quality of IQ2_XS vs IQ4_XS was not measured.
+- Fits with d3-flash resident at ~112 of 121 GB used, which is the reason for the move.
+
 ## Concurrency-1 benchmark: Clover-35B-A3B on sglang, BF16 (recorded 2026-11-09)
 
 `sglang/clover/` serves `Diffuspace/Clover-35B-A3B-Preview` (BF16, ~66 GB

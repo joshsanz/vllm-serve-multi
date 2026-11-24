@@ -1,5 +1,5 @@
-# Ripple-65B-Preview (dense, NVFP4 MLP / BF16 attention) on :8000, plus the d3-flash decision model
-# (vllm/systemone) on :8001. Replaces sglang/clover as the chat model.
+# Ripple-65B-Preview (dense, NVFP4 MLP / BF16 attention) on :8000, Replaces sglang/clover as the chat model.
+# The d3-flash decision model (:8001) runs standalone from ../../vllm/systemone (`docker compose up -d systemone`).
 #
 #   docker compose up -d --build                     # DFlash2 speculative decoding on (default)
 #   RIPPLE_SPEC=0 docker compose up -d --build       # baseline, no drafter
@@ -10,8 +10,6 @@
 # Follows Ricursive's 2789217b DGX Spark bundle: up to 4 concurrent requests, prefix cache, NON-deterministic
 # inference by default (RIPPLE_DETERMINISTIC=1 restores Ricursive's default; ~11% slower decode), triton attention, combined Spark kernels, chain decoding (RIPPLE_DECODING=tree is experimental).
 # RIPPLE_MAX_BATCH=1 RIPPLE_PREFIX_CACHE=0 reproduces the old concurrency-1 setup. Stop every other stack first.
-# If d3-flash is already running (e.g. left over from sglang/clover), start only this service, or
-# compose collides on the `systemone` container name:  docker compose up -d --build --no-deps ripple
 x-logging: &logging
   driver: json-file
   options: {max-size: "10m", max-file: "3"}
@@ -24,26 +22,6 @@ x-gpu: &gpu
           - {driver: nvidia, count: all, capabilities: [gpu]}
 
 services:
-  systemone:
-    <<: *gpu
-    build: ../../vllm/systemone
-    image: systemone:local
-    container_name: systemone
-    restart: unless-stopped
-    logging: *logging
-    ports:
-      - "8001:8000"
-    volumes:
-      - ~/.cache/huggingface:/root/.cache/huggingface
-      - ../../vllm/systemone/models.yaml:/etc/vllm-srun/models.yaml:ro
-    environment:
-      HF_TOKEN: ${HF_TOKEN:-}
-    command:
-      - serve
-      - --models=/etc/vllm-srun/models.yaml
-      - --host=0.0.0.0
-      - --port=8000
-
   ripple:
     <<: *gpu
     build: .
@@ -51,8 +29,6 @@ services:
     container_name: ripple
     restart: unless-stopped
     logging: *logging
-    depends_on:
-      - systemone
     ipc: host
     shm_size: "16gb"
     ports:

@@ -4,7 +4,7 @@
 # (vllm-sr-cuda). The runtime itself is a pure-Python package, so we install it from a
 # pinned upstream commit on top of the vLLM image, which already carries aarch64 CUDA
 # PyTorch. Its CUDA accelerator is "implemented, unvalidated" upstream.
-FROM vllm/vllm-openai:v0.33.0
+FROM vllm/vllm-openai:v0.34.0
 
 ARG SR_REF=6dd029835fee5c80f864d442868a7be4102bf128
 

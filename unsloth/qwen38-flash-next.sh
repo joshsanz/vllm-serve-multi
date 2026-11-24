@@ -4,6 +4,10 @@
 # unified pool for a 256k KV cache, the MTP head and d3-flash (systemone, :8001) running alongside.
 # Previously UD-IQ4_XS (~93.7 GB); UD-Q4_K_XL (upstream's pick) does not fit.
 #
+# Text-only: --no-mmproj drops the ~1.1 GiB vision projector; --parallel 3 (was 4) trims KV/recurrent
+# state in the shared pool. --cache-ram 2048 and --ctx-checkpoints 10 cap the growable host-side
+# caches (prompt cache + checkpoints) at ~5 GiB worst case so they cannot OOM the 121 GB pool.
+#
 # MTP spec decoding, per unsloth.ai/docs/models/qwen3.8-next:
 #   llama-server -hf ...:<quant> -md <repo>/MTP/mtp-...-shared-Q8_0.gguf \
 #     --spec-type draft-mtp --spec-draft-n-max N
@@ -32,7 +36,10 @@ echo "qwen38-flash-next: MTP draft head -> $DRAFT_HEAD" >&2
 
 LLAMA_ARG_SPEC_DRAFT_N_MAX=3 unsloth run \
     --model unsloth/Qwen3.8-Flash-Next-GGUF:UD-IQ2_XS \
-    --parallel 4 \
+    --parallel 3 \
+    --no-mmproj \
+    --cache-ram 2048 \
+    --ctx-checkpoints 10 \
     -c 262144 \
     --cache-type-k f16 --cache-type-v f16 \
     --threads 20 \

@@ -36,7 +36,7 @@ x-gpu: &default-gpu
 
 services:
   qwen38-fp8:
-    image: vllm/vllm-openai:v0.33.0
+    image: vllm/vllm-openai:v0.34.0
     container_name: qwen38-27b
     restart: unless-stopped
     logging: *default-logging

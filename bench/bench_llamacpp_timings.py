@@ -6,10 +6,11 @@ prefill/decode speed, draft accept rate) instead of client-side wall-clock
 math, and rotates through the same 6 real source files as
 bench_openai_client_timed.py for direct cross-engine comparison.
 
-Usage: bench_llamacpp_timings.py --base-url http://localhost:8000 --model <model-name>
+Usage: [LLAMA_API_KEY=<bearer>] bench_llamacpp_timings.py --base-url http://localhost:8000 --model <model-name>
 """
 import argparse
 import json
+import os
 import statistics
 import sys
 import time
@@ -50,7 +51,8 @@ def run_case(base_url, model, path, question):
     t0 = time.monotonic()
     ttft = None
     final = None
-    resp = requests.post(f"{base_url}/v1/chat/completions", json=payload, stream=True, timeout=600)
+    resp = requests.post(f"{base_url}/v1/chat/completions", json=payload, stream=True, timeout=600,
+                         headers=({"Authorization": f"Bearer {os.environ['LLAMA_API_KEY']}"} if os.environ.get("LLAMA_API_KEY") else {}))
     resp.raise_for_status()
     for line in resp.iter_lines():
         if not line:

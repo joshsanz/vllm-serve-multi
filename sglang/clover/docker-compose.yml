@@ -1,18 +1,15 @@
-# Clover-35B-A3B-Preview (block-diffusion LLM) as the chat model on :8000, plus the d3-flash
-# decision model (vLLM Semantic Router "vllm-srun" runtime) on :8001. Replaces the vllm/systemone
-# LFM2.5-24B-A2B pairing; the systemone service reuses that directory's Dockerfile and models.yaml.
+# Clover-35B-A3B-Preview (block-diffusion LLM) as the chat model on :8000. The d3-flash
+# decision model (:8001) runs standalone from ../../vllm/systemone (`docker compose up -d systemone`).
 #
 #   docker compose up -d --build        # first start downloads ~69 GB of BF16 weights
-#   curl localhost:8001/v1/models
-#   curl localhost:8000/v1/chat/completions -H 'content-type: application/json' \
+# #   curl localhost:8000/v1/chat/completions -H 'content-type: application/json' \
 #     -d '{"model":"clover-35b-a3b","messages":[{"role":"user","content":"hi"}]}'
 #
 # Clover only serves through the SGLang PR (see ./Dockerfile), with --speculative-algorithm CLOVER
 # (self-speculative: it drafts a block and verifies it with the same weights, no draft model).
 # Memory (~121 GiB pool): d3-flash ~19 GiB + Clover util 0.88 (weights are ~66 GB; lower values fail the hybrid state-cache budget: each request needs 4 big state slots, so ~2 concurrent requests fit).
-# Stop every other stack first; start systemone before clover so its placement check sees free
-# memory, and drop the page cache if it reports too little free (see vllm/systemone/docker-compose.yml):
-#   sudo sh -c 'echo 1 > /proc/sys/vm/drop_caches'
+# Stop every other stack first; start vllm/systemone (d3-flash) before clover so its placement check
+# sees free memory (page-cache gotcha: see vllm/systemone/docker-compose.yml).
 x-logging: &logging
   driver: json-file
   options: {max-size: "10m", max-file: "3"}
@@ -25,26 +22,6 @@ x-gpu: &gpu
           - {driver: nvidia, count: all, capabilities: [gpu]}
 
 services:
-  systemone:
-    <<: *gpu
-    build: ../../vllm/systemone
-    image: systemone:local
-    container_name: systemone
-    restart: unless-stopped
-    logging: *logging
-    ports:
-      - "8001:8000"
-    volumes:
-      - ~/.cache/huggingface:/root/.cache/huggingface
-      - ../../vllm/systemone/models.yaml:/etc/vllm-srun/models.yaml:ro
-    environment:
-      HF_TOKEN: ${HF_TOKEN:-}
-    command:
-      - serve
-      - --models=/etc/vllm-srun/models.yaml
-      - --host=0.0.0.0
-      - --port=8000
-
   clover:
     <<: *gpu
     build: .
@@ -52,8 +29,6 @@ services:
     container_name: clover
     restart: unless-stopped
     logging: *logging
-    depends_on:
-      - systemone
     ipc: host
     shm_size: "16gb"
     ports:
